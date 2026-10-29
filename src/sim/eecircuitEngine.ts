@@ -1,6 +1,7 @@
 // ngspice (compiled to WebAssembly by eecircuit-engine) behind the SpiceEngine interface.
 // Works in Node (tests) and in a Web Worker (app). One run at a time per instance.
 import { Simulation } from "eecircuit-engine";
+import { toAsciiNetlist } from "../core/netlist";
 import type { EngineOutput, SpiceEngine } from "../core/simulate";
 
 export class EecircuitEngine implements SpiceEngine {
@@ -16,7 +17,8 @@ export class EecircuitEngine implements SpiceEngine {
   run(netlist: string): Promise<EngineOutput> {
     const job = this.queue.then(async () => {
       await this.start();
-      this.sim.setNetList(netlist);
+      // ngspice-WASM hangs forever on non-ASCII bytes; generateNetlist already strips them, this is the backstop.
+      this.sim.setNetList(toAsciiNetlist(netlist).text);
       const r = await this.sim.runSim();
       const messages = this.sim.getError().flatMap((s) => s.split("\n"));
       return {

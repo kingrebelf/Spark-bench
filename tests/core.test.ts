@@ -164,3 +164,17 @@ describe("project format", () => {
     expect(parseProject("{}").diagnostics[0].code).toBe("project-schema");
   });
 });
+
+describe("netlist encoding", () => {
+  it("never sends non-ASCII to ngspice (it hangs on it) and still simulates", async () => {
+    const { b } = divider();
+    b.project.meta.name = "Ω divider – 10 µA “test”";
+    const { generateNetlist } = await import("../src/core/netlist");
+    const nl = generateNetlist(b.project, "op");
+    expect(/[^\x09\x0a\x20-\x7e]/.test(nl.text)).toBe(false);
+    expect(nl.text).toContain("* SparkBench netlist: Ohm divider - 10 uA \"test\"");
+    expect(nl.diagnostics.some((d) => d.code === "netlist-non-ascii")).toBe(false);
+    const r = await simulate(b.project, engine(), "op");
+    expect(r.ok).toBe(true);
+  }, 60_000);
+});

@@ -91,7 +91,7 @@ export function generateNetlist(
     lines.push(`* ${inst.ref} ${def.name}`, ...out);
   }
 
-  const text = [
+  const raw = [
     `* SparkBench netlist: ${project.meta.name}`,
     ...lines,
     ...defines.values(),
@@ -99,7 +99,34 @@ export function generateNetlist(
     ".end",
     "",
   ].join("\n");
+  const { text, replacedInCode } = toAsciiNetlist(raw);
+  if (replacedInCode.length) {
+    diagnostics.push({ severity: "warning", code: "netlist-non-ascii", source: "check",
+      message: `Non-ASCII characters were replaced in SPICE lines: ${replacedInCode.slice(0, 3).join(" | ")}`,
+      fix: "Use plain ASCII in part values and imported SPICE models (e.g. \"u\" for micro, \"Ohm\" for ohm)." });
+  }
   return { text, connectivity, diagnostics, elementMap };
+}
+
+const ASCII_MAP: Record<string, string> = {
+  "Ω": "Ohm", "Ω": "Ohm", "µ": "u", "μ": "u", "°": "deg", "±": "+-", "×": "x",
+  "–": "-", "—": "-", "‘": "'", "’": "'", "“": "\"", "”": "\"", "…": "...",
+  "²": "2", "³": "3", "©": "(c)", "®": "(R)", "™": "(TM)", " ": " ",
+};
+
+/**
+ * ngspice-WASM hangs on any non-ASCII byte in the netlist (even in a comment), so every netlist is
+ * reduced to printable ASCII. Returns the SPICE (non-comment) lines that needed changes.
+ */
+export function toAsciiNetlist(raw: string): { text: string; replacedInCode: string[] } {
+  const replacedInCode: string[] = [];
+  const text = raw.split("\n").map((line) => {
+    if (!/[^\x09\x20-\x7e]/.test(line)) return line;
+    const fixed = [...line].map((ch) => (/[\x09\x20-\x7e]/.test(ch) ? ch : ASCII_MAP[ch] ?? "?")).join("");
+    if (!/^\s*\*/.test(line)) replacedInCode.push(fixed.trim().slice(0, 60));
+    return fixed;
+  }).join("\n");
+  return { text, replacedInCode };
 }
 
 export { toSpiceNumber };
