@@ -1,6 +1,6 @@
 // Passive parts. Pin positions mirror the matching KiCad library symbols
 // (1 grid unit = 1.27 mm), so pin maps stay 1:1 on export.
-import type { ComponentDef } from "../core/types";
+import type { ComponentDef, SpiceEmitContext } from "../core/types";
 import { arcCoil, circle, el, hlead, line, modelProp, n, poly, rect, sn, text, uid, vlead } from "./util";
 
 export const resistor: ComponentDef = {
@@ -16,9 +16,39 @@ export const resistor: ComponentDef = {
   displayProps: ["value"],
 };
 
+// ---------------------------------------------------------------- live mode (interactive parts)
+
+/**
+ * Live-mode control source: a PWL voltage on an internal node that follows the part's schedule
+ * (`ctx.schedule`, [time, value] points interpolated linearly and held after the last point; the
+ * simulation UX turns each recorded change into a short finite edge). Emitted through `define`, so the
+ * helper source is not mapped to the part and its branch current never shows up as the part's current.
+ * Internal names contain "sbl_" so result views can hide them.
+ */
+function liveControl(c: SpiceEmitContext, schedule: [number, number][]): string {
+  const u = uid(c);
+  const node = `sbl_${u}`;
+  const pts = schedule.length ? schedule : [[0, 0] as [number, number]];
+  const pairs = pts.map(([t, v]) => `${sn(t)} ${sn(v)}`);
+  const rows: string[] = [];
+  for (let i = 0; i < pairs.length; i += 6) rows.push((i ? "+ " : "") + pairs.slice(i, i + 6).join(" "));
+  rows[0] = `Vsbl_${u} ${node} 0 PWL(${rows[0]}`;
+  rows[rows.length - 1] += ")";
+  c.define(`live:${u}`, rows.join("\n"));
+  return node;
+}
+
+/** Live switch: voltage-controlled switch closed above 0.5 V of the control node (schedule values 0/1). */
+function liveSwitch(c: SpiceEmitContext, schedule: [number, number][]): string[] {
+  const u = uid(c);
+  const ctl = liveControl(c, schedule);
+  c.define(`live-model:${u}`, `.model SBL_SW_${u} SW(Ron=${n(c, "ron")} Roff=${n(c, "roff")} Vt=0.5 Vh=0)`);
+  return [`${el("S", c)} ${c.node("1")} ${c.node("2")} ${ctl} 0 SBL_SW_${u}`];
+}
+
 export const potentiometer: ComponentDef = {
   id: "potentiometer", name: "Potentiometer", category: "Passive", refPrefix: "RV",
-  description: "Three-terminal variable resistor. The wiper (pin 2) divides the total resistance: at 0 % it sits at pin 3, at 100 % at pin 1. The position is fixed for each simulation run.",
+  description: "Three-terminal variable resistor. The wiper (pin 2) divides the total resistance: at 0 % it sits at pin 3, at 100 % at pin 1. In a transient run you can drag the wiper on the schematic while it plays.",
   keywords: ["pot", "trimmer", "variable resistor", "wiper", "volume"],
   pins: [{ id: "1", name: "1", x: 0, y: -3 }, { id: "2", name: "W", x: 3, y: 0 }, { id: "3", name: "3", x: 0, y: 3 }],
   symbol: [vlead(-3, -1.6), rect(-0.8, -1.6, 1.6, 3.2), vlead(1.6, 3), hlead(3, 1.2), poly([[1.9, -0.5], [1.0, 0], [1.9, 0.5]], true, true)],
@@ -27,11 +57,22 @@ export const potentiometer: ComponentDef = {
     { key: "position", label: "Wiper position", kind: "number", unit: "%", default: "50", min: 0, help: "0 % = wiper at pin 3, 100 % = wiper at pin 1." },
   ],
   provenance: "ideal",
-  accuracyNote: "Two ideal resistors split at the wiper. Contact resistance and taper (log/linear) are not modeled; the position is constant during a run.",
+  accuracyNote: "Two ideal resistors split at the wiper. Contact resistance and taper (log/linear) are not modeled. Dragged in live mode, the position follows your recorded moves as steps with 1 µs edges.",
+  interactive: { kind: "slider", prop: "position", min: 0, max: 100 },
   spice: (c) => {
     const r = c.num("value"), p = Math.min(1, Math.max(0, c.num("position") / 100));
     const rmin = 1e-3; // a 0 Ω element would short the two nodes; keep 1 mΩ
     const b = el("R", c);
+    if (c.schedule) {
+      // Live: two behavioral resistors (I = V/R) whose split follows the control node (0..100 %).
+      const ctl = liveControl(c, c.schedule);
+      const frac = `min(max(V(${ctl})/100,0),1)`;
+      const n1 = c.node("1"), n2 = c.node("2"), n3 = c.node("3");
+      return [
+        `B${b}_A ${n1} ${n2} I=V(${n1},${n2})/max(${sn(rmin)},${sn(r)}*(1-${frac}))`,
+        `B${b}_B ${n2} ${n3} I=V(${n2},${n3})/max(${sn(rmin)},${sn(r)}*${frac})`,
+      ];
+    }
     return [
       `${b}_A ${c.node("1")} ${c.node("2")} ${sn(Math.max(r * (1 - p), rmin))}`,
       `${b}_B ${c.node("2")} ${c.node("3")} ${sn(Math.max(r * p, rmin))}`,
@@ -163,33 +204,35 @@ const switchModel = [
   modelProp("ron", "On resistance", "10m", "Ω"),
   modelProp("roff", "Off resistance", "1G", "Ω"),
 ];
-const switchNote = "Static ideal switch: a resistor of Ron (closed) or Roff (open). The state is fixed for a whole simulation run; to switch during a run, drive a node with a pulse source instead. Contact bounce is not modeled.";
+const switchNote = "Ideal switch: a resistor of Ron (closed) or Roff (open). Operated on the schematic during a transient run, it becomes a voltage-controlled switch (Ron/Roff) that changes state at the recorded times with a 1 µs edge. Contact bounce is not modeled.";
 
 export const switchSpst: ComponentDef = {
   id: "switch_spst", name: "Switch (SPST)", category: "Passive", refPrefix: "SW",
-  description: "On/off toggle switch. Set Closed to choose its state for the run.",
+  description: "On/off toggle switch. Set Closed for its starting state; click it on the schematic while a transient run plays to flip it.",
   keywords: ["switch", "toggle", "spst", "on off"],
   pins: [{ id: "1", name: "A", x: -4, y: 0 }, { id: "2", name: "B", x: 4, y: 0 }],
   symbol: [hlead(-4, -2), circle(-1.6, 0, 0.4), line(-1.3, -0.2, 2, -1.6), circle(1.6, 0, 0.4), hlead(2, 4)],
   props: [{ key: "closed", label: "Closed", kind: "bool", default: false }, ...switchModel],
   provenance: "ideal",
   accuracyNote: switchNote,
+  interactive: { kind: "toggle", prop: "closed" },
   // Roff keeps a (very weak) DC path even when open.
-  spice: (c) => [`${el("R", c)} ${c.node("1")} ${c.node("2")} ${c.str("closed") === "true" ? n(c, "ron") : n(c, "roff")}`],
+  spice: (c) => c.schedule ? liveSwitch(c, c.schedule) : [`${el("R", c)} ${c.node("1")} ${c.node("2")} ${c.str("closed") === "true" ? n(c, "ron") : n(c, "roff")}`],
   kicad: { symbol: "Switch:SW_SPST", footprint: "Button_Switch_THT:SW_DIP_SPSTx01_Slide_9.78x4.72mm_W7.62mm_P2.54mm", pinMap: { 1: "1", 2: "2" } },
   displayProps: ["closed"],
 };
 
 export const pushButton: ComponentDef = {
   id: "push_button", name: "Push Button", category: "Passive", refPrefix: "SW",
-  description: "Momentary normally-open push button. Set Pressed to choose its state for the run.",
+  description: "Momentary normally-open push button. Set Pressed for its starting state; hold it down on the schematic while a transient run plays.",
   keywords: ["button", "momentary", "tactile", "key", "push"],
   pins: [{ id: "1", name: "1", x: -4, y: 0 }, { id: "2", name: "2", x: 4, y: 0 }],
   symbol: [hlead(-4, -2), circle(-1.6, 0, 0.4), circle(1.6, 0, 0.4), hlead(2, 4), line(-2, -1, 2, -1), vlead(-1, -2.4), line(-0.8, -2.4, 0.8, -2.4)],
   props: [{ key: "pressed", label: "Pressed", kind: "bool", default: false }, ...switchModel],
   provenance: "ideal",
   accuracyNote: switchNote,
-  spice: (c) => [`${el("R", c)} ${c.node("1")} ${c.node("2")} ${c.str("pressed") === "true" ? n(c, "ron") : n(c, "roff")}`],
+  interactive: { kind: "momentary", prop: "pressed" },
+  spice: (c) => c.schedule ? liveSwitch(c, c.schedule) : [`${el("R", c)} ${c.node("1")} ${c.node("2")} ${c.str("pressed") === "true" ? n(c, "ron") : n(c, "roff")}`],
   kicad: { symbol: "Switch:SW_Push", footprint: "Button_Switch_THT:SW_PUSH_6mm", pinMap: { 1: "1", 2: "2" } },
   displayProps: ["pressed"],
 };

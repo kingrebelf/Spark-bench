@@ -79,6 +79,8 @@ export const led: ComponentDef = {
     return diodeSpice(c, name, () => `.model ${name} D(${card})`);
   },
   kicad: { symbol: "Device:LED", footprint: "LED_THT:LED_D5.0mm", pinMap: diodeMap },
+  // Glow on the schematic from the simulated forward current (anode to cathode) vs. the "At current" prop.
+  indicator: { kind: "led", currentPin: "A", colorProp: "color", ratedCurrent: 0.02 },
   displayProps: ["color"],
 };
 
