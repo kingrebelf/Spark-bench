@@ -1,0 +1,41 @@
+{
+  "name": "sparkbench",
+  "version": "0.1.0",
+  "description": "Circuit design and simulation with KiCad integration",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron \"vite\" \"npm:dev:electron\"",
+    "dev:electron": "npm run build:electron && wait-on tcp:5183 && cross-env VITE_DEV_SERVER_URL=http://localhost:5183 electron .",
+    "dev:web": "vite",
+    "build:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --external:electron --outdir=dist-electron",
+    "build": "tsc -p . && vite build && npm run build:electron",
+    "start": "npm run build && electron .",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "eecircuit-engine": "^1.9.0",
+    "immer": "^11.2.9",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "cross-env": "^10.1.0",
+    "electron": "^45.1.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
+    "wait-on": "^9.5.1"
+  }
+}

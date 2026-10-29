@@ -1,0 +1,85 @@
+/* Dark theme by default; light via prefers-color-scheme. Colors meet WCAG AA on their backgrounds. */
+:root {
+  --bg: #0f1419; --panel: #161c23; --panel-2: #1d252e; --border: #2a3440;
+  --text: #e6edf3; --text-dim: #9aa7b4; --accent: #4fc3f7; --accent-2: #0288d1;
+  --error: #ff6b6b; --warn: #ffca28; --ok: #66bb6a; --info: #64b5f6;
+  --grid: #2b3540; --wire: #66bb6a; --symbol: #d6dde4; --symbol-fill: transparent;
+  --label: #ffb74d; --pin-open: #ff6b6b; --op-bg: rgba(79, 195, 247, 0.16); --op-fg: #8fd8ff;
+  --font: "Segoe UI", system-ui, -apple-system, sans-serif; --mono: "Cascadia Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f7fa; --panel: #ffffff; --panel-2: #eef2f6; --border: #d5dde5;
+    --text: #1b2733; --text-dim: #566573; --accent: #0277bd; --accent-2: #01579b;
+    --error: #c62828; --warn: #8d6e00; --ok: #2e7d32; --info: #1565c0;
+    --grid: #cfd8e0; --wire: #2e7d32; --symbol: #263238; --label: #b45309; --pin-open: #c62828;
+    --op-bg: rgba(2, 119, 189, 0.1); --op-fg: #01579b;
+    color-scheme: light;
+  }
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.app { display: flex; flex-direction: column; height: 100%; }
+.toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.brand { font-weight: 700; margin-right: 10px; color: var(--accent); }
+.sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+.grow { flex: 1; }
+.filename { color: var(--text-dim); }
+.btn { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.on { background: var(--accent-2); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent-2); border-color: var(--accent); color: #fff; }
+.btn.danger { background: #8e2424; border-color: var(--error); color: #fff; }
+.banner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+
+.workspace { flex: 1; display: grid; grid-template-columns: 240px 1fr 300px; min-height: 0; }
+.center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.canvas { flex: 1; width: 100%; min-height: 0; background: var(--bg); touch-action: none; user-select: none; }
+.panel { background: var(--panel); border-color: var(--border); overflow: auto; }
+.right { display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--panel); min-height: 0; }
+.tabs { display: flex; border-bottom: 1px solid var(--border); }
+.tabs button { flex: 1; background: none; border: none; padding: 8px; cursor: pointer; color: var(--text-dim); border-bottom: 2px solid transparent; }
+.tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+
+.library { border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+.search { margin: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); }
+.lib-scroll { overflow: auto; padding: 0 6px 12px; }
+.library h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin: 12px 6px 4px; }
+.lib-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; cursor: pointer; }
+.lib-item:hover { background: var(--panel-2); }
+.lib-item.active { border-color: var(--accent); background: var(--panel-2); }
+.lib-item span { display: flex; flex-direction: column; }
+.prov { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+.prov-vendor { color: var(--ok); } .prov-behavioral { color: var(--warn); } .prov-generic { color: var(--info); }
+
+.props { padding: 12px; }
+.props h2 { margin: 0 0 6px; font-size: 16px; } .props h2 small { color: var(--text-dim); font-weight: 400; }
+.hint { color: var(--text-dim); font-size: 13px; }
+.prov-note { font-size: 12px; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); }
+.field { display: flex; flex-direction: column; gap: 3px; margin: 10px 0; }
+.field > span { font-size: 12px; color: var(--text-dim); }
+.field input, .field select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); }
+.field.invalid input { border-color: var(--error); }
+.field em { color: var(--error); font-size: 12px; font-style: normal; } .field small { color: var(--text-dim); font-size: 12px; }
+.warn { color: var(--warn); } .error { color: var(--error); }
+
+.sim { border-top: 1px solid var(--border); height: 300px; display: flex; flex-direction: column; }
+.sim-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.sim-bar input, .sim-bar select { padding: 3px 6px; border-radius: 5px; border: 1px solid var(--border); background: var(--panel-2); }
+.sim-body { overflow: auto; padding: 8px 10px; flex: 1; }
+.status { color: var(--text-dim); } .status-failed { color: var(--error); } .status-done { color: var(--ok); }
+.stale { color: var(--warn); font-size: 12px; }
+.diags { list-style: none; margin: 0 0 8px; padding: 0; }
+.diag { padding: 6px 8px; border-left: 3px solid; margin-bottom: 4px; background: var(--panel-2); border-radius: 0 6px 6px 0; cursor: pointer; }
+.diag-error { border-color: var(--error); } .diag-warning { border-color: var(--warn); } .diag-info { border-color: var(--info); }
+.fix { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
+.op-table { border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+.op-table td, .op-table th { padding: 3px 14px 3px 0; text-align: left; border-bottom: 1px solid var(--border); }
+.miniplot svg { background: var(--panel-2); border-radius: 6px; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; margin-top: 4px; } .legend .axis { color: var(--text-dim); }
