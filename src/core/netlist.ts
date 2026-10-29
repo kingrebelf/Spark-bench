@@ -121,8 +121,8 @@ const ASCII_MAP: Record<string, string> = {
 export function toAsciiNetlist(raw: string): { text: string; replacedInCode: string[] } {
   const replacedInCode: string[] = [];
   const text = raw.split("\n").map((line) => {
-    if (!/[^\x09\x20-\x7e]/.test(line)) return line;
-    const fixed = [...line].map((ch) => (/[\x09\x20-\x7e]/.test(ch) ? ch : ASCII_MAP[ch] ?? "?")).join("");
+    if (!/[^\x09\x0d\x20-\x7e]/.test(line)) return line;
+    const fixed = [...line].map((ch) => (/[\x09\x0d\x20-\x7e]/.test(ch) ? ch : ASCII_MAP[ch] ?? "?")).join("");
     if (!/^\s*\*/.test(line)) replacedInCode.push(fixed.trim().slice(0, 60));
     return fixed;
   }).join("\n");
