@@ -6,3 +6,4 @@ out/
 *.log
 .vite/
 test-output/
+release/
