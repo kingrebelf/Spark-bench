@@ -164,3 +164,19 @@ export function searchHits<T>(items: T[], text: (t: T) => string, name: (t: T) =
   }
   return scored.sort((a, b) => a.s - b.s).slice(0, limit).map((x) => x.t);
 }
+
+/**
+ * Project-level sym-lib-table / fp-lib-table naming only the libraries a project uses, through KiCad's
+ * own path variables. Written only when the user has no global tables (fresh KiCad install), so the
+ * project still resolves its libraries in KiCad and kicad-cli. Returns null when not needed.
+ */
+export function projectLibTables(libs: KicadLibraries, symbolLibs: string[], footprintLibs: string[]): { sym: string; fp: string } | null {
+  if (libs.tables.source === "user") return null;
+  const v = libs.kicad.major;
+  const row = (nick: string, uri: string) => `\t(lib (name "${nick}") (type "KiCad") (uri "${uri}") (options "") (descr ""))`;
+  const sym = [`(sym_lib_table`, `\t(version 7)`,
+    ...[...new Set(symbolLibs)].sort().filter((n) => libs.symbolLibPath(n)).map((n) => row(n, `\${KICAD${v}_SYMBOL_DIR}/${n}.kicad_sym`)), `)`, ``].join("\n");
+  const fp = [`(fp_lib_table`, `\t(version 7)`,
+    ...[...new Set(footprintLibs)].sort().filter((n) => libs.footprintLibPath(n)).map((n) => row(n, `\${KICAD${v}_FOOTPRINT_DIR}/${n}.pretty`)), `)`, ``].join("\n");
+  return { sym, fp };
+}

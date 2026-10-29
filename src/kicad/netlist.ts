@@ -134,3 +134,50 @@ export function comparePartitions(expected: string[][], actual: string[][]): Net
   const onlyInKicad = a.filter((g) => !es.has(g)).map((g) => g.split(" "));
   return { equal: !onlyInSparkbench.length && !onlyInKicad.length, onlyInSparkbench, onlyInKicad };
 }
+
+// ------------------------------------------------------------------ change report between two KiCad netlists
+
+export interface NetlistChanges {
+  added: string[];
+  removed: string[];
+  /** "R3: value 1k → 2.2k", "U1: footprint A → B" */
+  changed: string[];
+  /** Pins whose connections changed: "R1 pin 2: now with C1 pin 1 (was with R2 pin 1)". */
+  rewired: string[];
+}
+
+export function diffNetlists(before: KicadNetlist, after: KicadNetlist): NetlistChanges {
+  const real = (c: KicadComp) => !c.ref.startsWith("#");
+  const b = new Map(before.components.filter(real).map((c) => [c.ref, c]));
+  const a = new Map(after.components.filter(real).map((c) => [c.ref, c]));
+  const added = [...a.keys()].filter((r) => !b.has(r)).sort();
+  const removed = [...b.keys()].filter((r) => !a.has(r)).sort();
+  const changed: string[] = [];
+  for (const [ref, c] of a) {
+    const o = b.get(ref);
+    if (!o) continue;
+    if (o.value !== c.value) changed.push(`${ref}: value ${o.value} → ${c.value}`);
+    if (o.footprint !== c.footprint) changed.push(`${ref}: footprint ${o.footprint || "(none)"} → ${c.footprint || "(none)"}`);
+    if (o.libId !== c.libId) changed.push(`${ref}: symbol ${o.libId} → ${c.libId}`);
+  }
+  // Compare each surviving pin's set of neighbours (ignores net names).
+  const neighbours = (nl: KicadNetlist) => {
+    const m = new Map<string, string>();
+    for (const n of nl.nets) {
+      const nodes = n.nodes.filter((d) => !d.ref.startsWith("#")).map((d) => `${d.ref}:${d.pin}`).sort();
+      for (const k of nodes) m.set(k, nodes.filter((x) => x !== k).join(" "));
+    }
+    return m;
+  };
+  const nb = neighbours(before), na = neighbours(after);
+  const rewired: string[] = [];
+  const fmt = (s: string) => (s ? s.split(" ").map((x) => x.replace(":", " pin ")).join(", ") : "nothing");
+  for (const [k, now] of na) {
+    const [ref] = k.split(":");
+    if (!b.has(ref)) continue;
+    const was = nb.get(k);
+    if (was === undefined || was === now) continue;
+    rewired.push(`${k.replace(":", " pin ")}: now with ${fmt(now)} (was with ${fmt(was)})`);
+  }
+  return { added, removed, changed, rewired: rewired.sort() };
+}
