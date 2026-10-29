@@ -62,6 +62,10 @@ export interface KicadMapping {
   footprint: string;
   /** Our pin id -> KiCad symbol pin number. */
   pinMap: Record<string, string>;
+  /** Symbol unit to place for multi-unit symbols (1 = A). Default 1. */
+  unit?: number;
+  /** Extra units that must also be placed (e.g. the power unit of an op-amp package); their pins are power pins with no schematic wires. */
+  extraUnits?: number[];
   /** Extra KiCad fields to write (e.g. Sim.Device). */
   fields?: Record<string, string>;
 }
