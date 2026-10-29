@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseKicadNetlist } from "../netlist";
 import { splitLibId } from "../symbols";
-import { runPython, type KicadInstall } from "./install";
+import { runPythonAsync, type KicadInstall } from "./install";
 import type { KicadLibraries } from "./libs";
 
 export interface PcbFootprintIn {
@@ -227,7 +227,7 @@ export async function generatePcb(k: KicadInstall, libs: KicadLibraries, opts: {
   await fs.writeFile(script, SCRIPT, "utf8");
   await fs.writeFile(cfgFile, JSON.stringify({ pcb: opts.pcbPath, update, nets: input.nets, footprints: input.footprints }), "utf8");
   try {
-    const r = runPython(k, script, [cfgFile]);
+    const r = await runPythonAsync(k, script, [cfgFile]);
     const line = r.stdout.split(/\r?\n/).find((l) => l.startsWith("SPARKBENCH_RESULT "));
     if (r.code !== 0 || !line) throw new Error(`pcbnew failed (exit ${r.code}): ${(r.stderr || r.stdout).trim().split(/\r?\n/).slice(-6).join(" ")}`);
     const res = JSON.parse(line.slice("SPARKBENCH_RESULT ".length));

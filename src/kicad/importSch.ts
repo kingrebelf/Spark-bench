@@ -95,7 +95,8 @@ export function importSchematic(text: string, opts: { name?: string; lookup?: (t
       const net = props.Value || splitLibId(libId).name;
       const pin = unitPins(info, unit)[0];
       const pt = pin ? pinAt(pin.number)! : { x: ax, y: ay };
-      if (GROUND_NAMES.test(net)) {
+      if (net === "GND" || net === "0") {
+        if (net === "0") report.warnings.push(`Power symbol ${ref} ("0") imported as ground: KiCad keeps net "0" separate from "GND" in its netlist, though both are simulation ground.`);
         const gd = defs.find((d) => d.role === "ground");
         if (gd) {
           const c: ComponentInstance = { id: newId("c"), type: gd.id, ref, position: gp(pt.x, pt.y), rotation: 0, props: {} };
@@ -214,13 +215,21 @@ export function importSchematic(text: string, opts: { name?: string; lookup?: (t
   project.schematic.wires.push(...extraWires);
 
   const labelRot = (a: number): Rotation => (((360 - a) % 360) as Rotation);
+  const renamed = new Set<string>();
   for (const kind of ["label", "global_label", "hierarchical_label"]) {
     for (const l of children(root, kind)) {
       const name = arg(l) ?? "";
       const at = child(l, "at");
-      project.schematic.labels.push({ id: newId("l"), name, position: gp(numArg(at, 1), numArg(at, 2)), rotation: labelRot(Number(arg(at, 3) ?? 0)) });
+      // KiCad joins a label named exactly "GND" to the GND power net (as SparkBench does), but "gnd", "Gnd" or "0"
+      // stay separate nets in KiCad while SparkBench would make them ground: rename them to keep KiCad's connectivity.
+      let sbName = name;
+      if (GROUND_NAMES.test(name) && name !== "GND") {
+        sbName = `${name}_net`;
+        if (!renamed.has(name)) report.warnings.push(`Label "${name}" was renamed "${sbName}": in KiCad it is a separate net, but SparkBench would treat "${name}" as ground.`);
+        renamed.add(name);
+      }
+      project.schematic.labels.push({ id: newId("l"), name: sbName, position: gp(numArg(at, 1), numArg(at, 2)), rotation: labelRot(Number(arg(at, 3) ?? 0)) });
       report.counts.labels++;
-      if (GROUND_NAMES.test(name)) report.warnings.push(`Label "${name}" is treated as ground in SparkBench (in KiCad a label named ${name} is not joined to the GND power net).`);
     }
     const n = children(root, kind).length;
     if (n && kind === "global_label") report.warnings.push(`${n} global label(s) imported as ordinary net labels (single sheet: same behaviour).`);

@@ -24,8 +24,9 @@ Writes `<name>.kicad_pro`, `<name>.kicad_sch` and, if chosen, `<name>.kicad_pcb`
 - **Schematic.** Symbols are copied from the installed `.kicad_sym` libraries into the schematic's `lib_symbols`
   (derived `extends` symbols are flattened the way KiCad does it). Each part gets Reference, Value, Footprint,
   Datasheet/Description from the library, custom fields from the part mapping, pin UUIDs and an `instances`
-  block. Wires, junctions, net labels and ground symbols (`power:GND`) are written; labels named `GND`/`0`
-  become `power:GND` symbols, because in KiCad a local label "GND" is *not* joined to the GND power net.
+  block. Wires, junctions, net labels and ground symbols (`power:GND`) are written. SparkBench labels that mean
+  ground (`GND`, `gnd`, `0`) become `power:GND` symbols: checked with kicad-cli, KiCad 10 joins only a label
+  named exactly `GND` to the GND power net, while `gnd` or `0` would be separate nets there.
 - **Grid.** 1 SparkBench grid unit = 1.27 mm, so every pin stays on KiCad's default 50 mil grid. The drawing is
   shifted by a whole number of grid units to sit on the sheet; the paper size (A4…A0) follows the drawing size.
 - **Exact connectivity.** Every wire is split at each pin, wire vertex or label lying on it, so every KiCad
@@ -58,7 +59,8 @@ Writes `<name>.kicad_pro`, `<name>.kicad_sch` and, if chosen, `<name>.kicad_pcb`
 ### Verification after every export
 
 1. `kicad-cli sch erc`: errors and warnings are shown as KiCad reports them (e.g. "power pin not driven",
-   unconnected pins). Positions in kicad-cli's JSON are not used.
+   unconnected pins). Positions in kicad-cli's JSON are not used (with `--units mm` they come out scaled by 1/100
+   in 10.0.6). Reports and netlists are written to a temporary folder, never into the project folder.
 2. `kicad-cli sch export netlist` (board netlist + SPICE netlist): KiCad's connectivity is compared with
    SparkBench's nets as sets of `REF:pin` groups. The board netlist omits `on_board no` symbols, so those come
    from the SPICE netlist. The panel shows "matches exactly" or lists every net that differs. KiCad pins that the
@@ -111,8 +113,12 @@ Choosing a folder that already contains `<name>.kicad_sch` switches the button t
 - Kept: references, values (including `Sim.Params` of DC/sine/pulse sources), footprints that differ from the
   part default and custom fields (stored in `instance.kicad`), wires (split at junction dots), local/global/
   hierarchical labels (as net labels), `.op/.tran/.ac` text directives.
-- Power symbols: `GND`/`0` become SparkBench ground; other power nets (`+5V`, `VCC`, …) become net labels with
-  that name. Extra units of a multi-unit part are tied to the main part with labels `<REF>_<pin>`.
+- Power symbols: `GND` (and `0`, with a note: KiCad lists "0" and "GND" as separate nets although both are
+  simulation ground) become SparkBench ground; other power nets (`+5V`, `VCC`, …) become net labels with that
+  name. This matches KiCad, which joins a power symbol and a label of the same name (checked with kicad-cli).
+- Labels named `gnd`, `Gnd` or `0` are separate nets in KiCad but would be ground in SparkBench, so they are
+  renamed `<name>_net` and the report says so. A label named exactly `GND` joins ground in both.
+- Extra units of a multi-unit part are tied to the main part with labels `<REF>_<pin>`.
 - **Not imported, and listed in the report:** symbols with no SparkBench part (no placeholder is created, because
   it could not be simulated honestly; their connections are missing), units of a multi-unit symbol that the
   SparkBench part does not model (e.g. the second op-amp of an LM358), KiCad simulation model files
@@ -128,7 +134,7 @@ Choosing a folder that already contains `<name>.kicad_sch` switches the button t
 | Connectivity | verified equal with kicad-cli | verified equal in tests (rectifier demo, own exports) |
 | Footprint/symbol overrides, custom fields | yes | yes |
 | Wires, junctions, labels, ground | yes | yes |
-| Other power symbols | – (SparkBench has none) | as net labels |
+| Other power symbols | – (SparkBench has none) | as same-named net labels |
 | Multi-unit parts | main + extra units | main + extra units |
 | Simulation settings | text directive | `.op/.tran/.ac` directive |
 | SPICE models | built-in D/BJT models, sources, R/C/L | no (SparkBench models are used) |

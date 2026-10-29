@@ -1,5 +1,5 @@
 // KiCad installation discovery and kicad-cli/python execution (Node only: Electron main process and tests).
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -109,3 +109,24 @@ export function runPython(k: KicadInstall, script: string, args: string[], timeo
 }
 
 export const tmpBase = () => os.tmpdir();
+
+function spawnAsync(cmd: string, args: string[], timeoutMs: number): Promise<CliResult> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { windowsHide: true });
+    let stdout = "", stderr = "";
+    const t = setTimeout(() => { p.kill(); reject(new Error(`${path.basename(cmd)} timed out after ${Math.round(timeoutMs / 1000)} s`)); }, timeoutMs);
+    p.stdout.setEncoding("utf8").on("data", (d: string) => { stdout += d; });
+    p.stderr.setEncoding("utf8").on("data", (d: string) => { stderr += d; });
+    p.on("error", (e) => { clearTimeout(t); reject(e); });
+    p.on("close", (code) => { clearTimeout(t); resolve({ code: code ?? -1, stdout, stderr }); });
+  });
+}
+
+/** Async kicad-cli (keeps the Electron main process responsive). */
+export const runCliAsync = (k: KicadInstall, args: string[], timeoutMs = 300000) => spawnAsync(k.cli, args, timeoutMs);
+
+/** Async bundled-Python run (isolated mode). */
+export function runPythonAsync(k: KicadInstall, script: string, args: string[], timeoutMs = 600000): Promise<CliResult> {
+  if (!k.python) return Promise.reject(new Error("This KiCad installation has no bundled Python (pcbnew)."));
+  return spawnAsync(k.python, ["-I", script, ...args], timeoutMs);
+}

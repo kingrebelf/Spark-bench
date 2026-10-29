@@ -226,7 +226,7 @@ function ViolationList({ items, max = 15 }: { items: Violation[]; max?: number }
           <div className="fix">{[...new Set(vs.flatMap((v) => v.items.map((i) => i.description)))].slice(0, 6).join("; ")}</div>
         </li>
       ))}
-      {groups.length > max && <li className="hint">…and {groups.length - max} more kinds; see the JSON report in the project folder.</li>}
+      {groups.length > max && <li className="hint">…and {groups.length - max} more kinds of finding. Run ERC/DRC in KiCad to see them all.</li>}
     </ul>
   );
 }

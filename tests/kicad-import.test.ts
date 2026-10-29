@@ -82,3 +82,24 @@ describe.skipIf(!kicad)("import KiCad schematics", () => {
     await writeText(path.join(dir, "again2.kicad_sch"), ex2.text);
   });
 });
+
+describe.skipIf(!kicad)("ground-like label names keep KiCad's connectivity", () => {
+  it('only a label named exactly "GND" joins ground; "gnd"/"0" stay separate nets as in KiCad', async () => {
+    const { b } = divider();
+    const R3 = b.place("resistor", "R3", 40, 3);
+    const R4 = b.place("resistor", "R4", 50, 3);
+    b.label("q1", b.pin(R3, "2")); b.label("q2", b.pin(R4, "2"));
+    b.label("q3", b.pin(R3, "1")); b.label("q4", b.pin(R4, "1"));
+    const ex = exportSchematic({ project: b.project, name: "gl", symbols: libs! });
+    // Labels written straight into KiCad's file: "GND" (joins the power net in KiCad), "gnd" and "0" (do not).
+    const text = ex.text.replace('(label "q1"', '(label "GND"').replace('(label "q2"', '(label "gnd"').replace('(label "q3"', '(label "0"').replace('(label "q4"', '(label "0"');
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sb-gl-"));
+    const sch = path.join(dir, "gl.kicad_sch");
+    await writeText(sch, text);
+    const { project, report } = importSchematic(text);
+    expect(report.warnings.join(" ")).toMatch(/"gnd" was renamed/);
+    const ours = importedPartition(project, computeConnectivity(project));
+    const theirs = await kicadNets(sch, project);
+    expect(comparePartitions(theirs, ours)).toEqual({ equal: true, onlyInSparkbench: [], onlyInKicad: [] });
+  });
+});
