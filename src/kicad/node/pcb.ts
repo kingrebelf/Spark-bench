@@ -15,7 +15,7 @@ export interface PcbFootprintIn {
   path: string; sheetname: string; sheetfile: string;
   /** pad number → net name */
   pads: Record<string, string>;
-  /** Symbol fields copied onto the footprint, as KiCad's Update PCB does (Datasheet, Description). */
+  /** Symbol fields copied onto the footprint, as KiCad's Update PCB does (Datasheet, Description, user fields). */
   fields: Record<string, string>;
   /** Schematic position (any unit), used to keep schematic neighbours together. */
   sch?: { x: number; y: number };
@@ -61,7 +61,7 @@ existing = {fp.GetReference(): fp for fp in board.GetFootprints()}
 wanted = {f["ref"] for f in cfg["footprints"]}
 
 def bbox(fp):
-    b = fp.GetBoundingBox(False)
+    b = fp.GetBoundingBox(True)
     return b.GetX(), b.GetY(), b.GetWidth(), b.GetHeight()
 
 def load(f):
@@ -202,7 +202,8 @@ export function pcbInputFromNetlist(netlistText: string, libs: KicadLibraries, s
       ref: c.ref, value: c.value, fpId: c.footprint, libPath, fpName: name,
       path: `/${c.tstamps[0] ?? ""}`, sheetname: c.fields.Sheetname ?? "/", sheetfile: c.fields.Sheetfile ?? "",
       pads: padNets.get(c.ref) ?? {}, sch: schPos[c.ref],
-      fields: { Datasheet: c.fields.Datasheet ?? "", Description: c.fields.Description ?? "" },
+      // All symbol fields except the ones KiCad handles separately, as Update PCB from Schematic copies them.
+      fields: Object.fromEntries(Object.entries(c.fields).filter(([key]) => !["Reference", "Value", "Footprint", "Sheetname", "Sheetfile"].includes(key) && !key.startsWith("ki_"))),
     });
   }
   const nets = [...new Set(nl.nets.map((n) => n.name))];

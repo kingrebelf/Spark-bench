@@ -44,6 +44,11 @@ function rcNetwork() {
     prev = b.pin(r, "2");
   }
   b.label("GND", b.pin(V, "2"));
+  // An LED carries Sim.* fields, which must reach the footprint for schematic parity.
+  const D = b.place("led", "D1", 70, 0, {}, 90);
+  b.label("GND", b.pin(D, "K"));
+  b.wire(prev, { x: prev.x, y: -6 }, { x: 67, y: -6 }, { x: 67, y: 0 });
+  b.label("led", { x: 67, y: 0 }); b.label("led", b.pin(D, "A"));
   return b.project;
 }
 
@@ -53,11 +58,11 @@ describe.skipIf(!canRun)("PCB generation (pcbnew)", () => {
     const pcbPath = path.join(dir, "rc.kicad_pcb");
     const res = await generatePcb(kicad!, libs!, { pcbPath, netlistText: netlist, update: false });
     expect(res.skipped).toEqual([]);
-    expect(res.placed.map((p) => p.ref).sort()).toEqual(["C1", "C2", "C3", "C4", "C5", "C6", "R1", "R2", "R3", "R4", "R5", "R6"].sort());
+    expect(res.placed.map((p) => p.ref).sort()).toEqual(["C1", "C2", "C3", "C4", "C5", "C6", "D1", "R1", "R2", "R3", "R4", "R5", "R6"].sort());
 
     const board = parse(await fs.readFile(pcbPath, "utf8"));
     const fps = children(board, "footprint");
-    expect(fps.length).toBe(12);
+    expect(fps.length).toBe(13);
     // Pad nets equal KiCad's netlist.
     const nl = parseKicadNetlist(netlist);
     const expected = new Map<string, string>();
@@ -72,7 +77,7 @@ describe.skipIf(!canRun)("PCB generation (pcbnew)", () => {
       // Linked to the schematic symbol so KiCad's Update PCB matches it.
       expect(arg(child(fp, "path"))).toMatch(/^\/[0-9a-f-]{36}$/);
     }
-    expect(pads).toBe(24);
+    expect(pads).toBe(26);
     const outline = children(board, "gr_rect").filter((r) => arg(child(r, "layer")) === "Edge.Cuts");
     expect(outline.length).toBe(1);
     expect(children(board, "segment").length).toBe(0);
@@ -88,7 +93,11 @@ describe.skipIf(!canRun)("PCB generation (pcbnew)", () => {
     expect(drc.ok).toBe(true);
     expect(drc.unconnected.length).toBeGreaterThan(0);          // not routed: KiCad reports the open connections
     expect(drc.footprintIssues).toEqual([]);                     // schematic parity: board matches the schematic
-    expect(drc.violations.filter((v) => /courtyard|overlap|clearance|edge|lib_footprint/i.test(v.type))).toEqual([]);
+    // Placement problems: courtyard overlaps, anything against the board edge, silk of two different footprints
+    // overlapping, library resolution. (Some library footprints overlap their own silkscreen; that is not placement.)
+    const refsIn = (v: { items: { description: string }[] }) => new Set(v.items.map((i) => /of (S+) on/.exec(i.description)?.[1]).filter(Boolean)).size;
+    const placement = drc.violations.filter((v) => /courtyard|edge|lib_footprint|clearance/i.test(v.type) && v.type !== "silk_overlap" || (v.type === "silk_overlap" && refsIn(v) > 1));
+    expect(placement).toEqual([]);
   }, 120000);
 
   it("multi-unit op-amp gets one DIP-8 footprint; simulation sources stay off the board", async () => {
@@ -124,6 +133,6 @@ describe.skipIf(!canRun)("PCB generation (pcbnew)", () => {
     expect(r1?.kept).toBe(true);
     expect(res.placed.find((p) => p.ref === "R7")?.kept).toBe(false);
     const board = parse(await fs.readFile(pcbPath, "utf8"));
-    expect(children(board, "footprint").length).toBe(12);
+    expect(children(board, "footprint").length).toBe(13);
   }, 180000);
 });
