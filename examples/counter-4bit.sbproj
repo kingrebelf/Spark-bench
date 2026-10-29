@@ -1,0 +1,558 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "4-bit counter demo",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "A 1 kHz clock drives a 74x93-style ripple counter (Q0 wired to CP1). Q0-Q3 count 0-15 in binary on each falling clock edge; each output lights an LED."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "counter4",
+        "ref": "U1",
+        "position": {
+          "x": 20,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_002",
+        "type": "vpulse",
+        "ref": "V1",
+        "position": {
+          "x": 2,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "low": "0",
+          "high": "5",
+          "frequency": "1k",
+          "duty": "50",
+          "edge": "1u"
+        }
+      },
+      {
+        "id": "c_003",
+        "type": "vdc",
+        "ref": "V2",
+        "position": {
+          "x": -6,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "5"
+        }
+      },
+      {
+        "id": "c_005",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": -6,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_007",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 20,
+          "y": 20
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_009",
+        "type": "ground",
+        "ref": "#PWR03",
+        "position": {
+          "x": 2,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_014",
+        "type": "ground",
+        "ref": "#PWR04",
+        "position": {
+          "x": 8,
+          "y": 16
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_016",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 54,
+          "y": 17
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_017",
+        "type": "led",
+        "ref": "D1",
+        "position": {
+          "x": 54,
+          "y": 24
+        },
+        "rotation": 270,
+        "props": {
+          "color": "green"
+        }
+      },
+      {
+        "id": "c_020",
+        "type": "ground",
+        "ref": "#PWR05",
+        "position": {
+          "x": 54,
+          "y": 27
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_022",
+        "type": "resistor",
+        "ref": "R2",
+        "position": {
+          "x": 48,
+          "y": 17
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_023",
+        "type": "led",
+        "ref": "D2",
+        "position": {
+          "x": 48,
+          "y": 24
+        },
+        "rotation": 270,
+        "props": {
+          "color": "green"
+        }
+      },
+      {
+        "id": "c_026",
+        "type": "ground",
+        "ref": "#PWR06",
+        "position": {
+          "x": 48,
+          "y": 27
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_028",
+        "type": "resistor",
+        "ref": "R3",
+        "position": {
+          "x": 42,
+          "y": 17
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_029",
+        "type": "led",
+        "ref": "D3",
+        "position": {
+          "x": 42,
+          "y": 24
+        },
+        "rotation": 270,
+        "props": {
+          "color": "green"
+        }
+      },
+      {
+        "id": "c_032",
+        "type": "ground",
+        "ref": "#PWR07",
+        "position": {
+          "x": 42,
+          "y": 27
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_034",
+        "type": "resistor",
+        "ref": "R4",
+        "position": {
+          "x": 36,
+          "y": 17
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_035",
+        "type": "led",
+        "ref": "D4",
+        "position": {
+          "x": 36,
+          "y": 24
+        },
+        "rotation": 270,
+        "props": {
+          "color": "green"
+        }
+      },
+      {
+        "id": "c_038",
+        "type": "ground",
+        "ref": "#PWR08",
+        "position": {
+          "x": 36,
+          "y": 27
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_008",
+        "points": [
+          {
+            "x": 2,
+            "y": 6
+          },
+          {
+            "x": 10,
+            "y": 6
+          }
+        ]
+      },
+      {
+        "id": "w_011",
+        "points": [
+          {
+            "x": 10,
+            "y": 12
+          },
+          {
+            "x": 8,
+            "y": 12
+          }
+        ]
+      },
+      {
+        "id": "w_012",
+        "points": [
+          {
+            "x": 10,
+            "y": 14
+          },
+          {
+            "x": 8,
+            "y": 14
+          }
+        ]
+      },
+      {
+        "id": "w_013",
+        "points": [
+          {
+            "x": 8,
+            "y": 12
+          },
+          {
+            "x": 8,
+            "y": 16
+          }
+        ]
+      },
+      {
+        "id": "w_018",
+        "points": [
+          {
+            "x": 30,
+            "y": 6
+          },
+          {
+            "x": 54,
+            "y": 6
+          },
+          {
+            "x": 54,
+            "y": 14
+          }
+        ]
+      },
+      {
+        "id": "w_019",
+        "points": [
+          {
+            "x": 54,
+            "y": 20
+          },
+          {
+            "x": 54,
+            "y": 21
+          }
+        ]
+      },
+      {
+        "id": "w_024",
+        "points": [
+          {
+            "x": 30,
+            "y": 8
+          },
+          {
+            "x": 48,
+            "y": 8
+          },
+          {
+            "x": 48,
+            "y": 14
+          }
+        ]
+      },
+      {
+        "id": "w_025",
+        "points": [
+          {
+            "x": 48,
+            "y": 20
+          },
+          {
+            "x": 48,
+            "y": 21
+          }
+        ]
+      },
+      {
+        "id": "w_030",
+        "points": [
+          {
+            "x": 30,
+            "y": 10
+          },
+          {
+            "x": 42,
+            "y": 10
+          },
+          {
+            "x": 42,
+            "y": 14
+          }
+        ]
+      },
+      {
+        "id": "w_031",
+        "points": [
+          {
+            "x": 42,
+            "y": 20
+          },
+          {
+            "x": 42,
+            "y": 21
+          }
+        ]
+      },
+      {
+        "id": "w_036",
+        "points": [
+          {
+            "x": 30,
+            "y": 12
+          },
+          {
+            "x": 36,
+            "y": 12
+          },
+          {
+            "x": 36,
+            "y": 14
+          }
+        ]
+      },
+      {
+        "id": "w_037",
+        "points": [
+          {
+            "x": 36,
+            "y": 20
+          },
+          {
+            "x": 36,
+            "y": 21
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_004",
+        "name": "VCC",
+        "position": {
+          "x": -6,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_006",
+        "name": "VCC",
+        "position": {
+          "x": 20,
+          "y": 0
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_010",
+        "name": "clk",
+        "position": {
+          "x": 10,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_015",
+        "name": "q0",
+        "position": {
+          "x": 10,
+          "y": 8
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_021",
+        "name": "q0",
+        "position": {
+          "x": 30,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_027",
+        "name": "q1",
+        "position": {
+          "x": 30,
+          "y": 8
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_033",
+        "name": "q2",
+        "position": {
+          "x": 30,
+          "y": 10
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_039",
+        "name": "q3",
+        "position": {
+          "x": 30,
+          "y": 12
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "20m",
+      "step": "5u"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_040",
+        "kind": "voltage",
+        "target": {
+          "netName": "clk"
+        },
+        "label": "CLK",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_041",
+        "kind": "voltage",
+        "target": {
+          "netName": "q0"
+        },
+        "label": "Q0",
+        "color": "#ffb74d"
+      },
+      {
+        "id": "p_042",
+        "kind": "voltage",
+        "target": {
+          "netName": "q1"
+        },
+        "label": "Q1",
+        "color": "#81c784"
+      },
+      {
+        "id": "p_043",
+        "kind": "voltage",
+        "target": {
+          "netName": "q2"
+        },
+        "label": "Q2",
+        "color": "#e57373"
+      },
+      {
+        "id": "p_044",
+        "kind": "voltage",
+        "target": {
+          "netName": "q3"
+        },
+        "label": "Q3",
+        "color": "#ba68c8"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

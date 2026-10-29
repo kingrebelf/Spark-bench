@@ -1,0 +1,149 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "RC charging",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "A 5 V step charges 1 µF through 1 kΩ. τ = RC = 1 ms: after 1 ms the capacitor reaches 63 % (3.16 V), after 5 ms it is essentially full. The source then steps back to 0 V and it discharges."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "vpulse",
+        "ref": "V1",
+        "position": {
+          "x": 0,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "low": "0",
+          "high": "5",
+          "frequency": "100",
+          "duty": "50",
+          "edge": "1u"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 7,
+          "y": 0
+        },
+        "rotation": 270,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_003",
+        "type": "capacitor",
+        "ref": "C1",
+        "position": {
+          "x": 14,
+          "y": 3
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1u"
+        }
+      },
+      {
+        "id": "c_007",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": 0,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_008",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 14,
+          "y": 6
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_004",
+        "points": [
+          {
+            "x": 0,
+            "y": 6
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 4,
+            "y": 0
+          }
+        ]
+      },
+      {
+        "id": "w_005",
+        "points": [
+          {
+            "x": 10,
+            "y": 0
+          },
+          {
+            "x": 14,
+            "y": 0
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_006",
+        "name": "vc",
+        "position": {
+          "x": 14,
+          "y": 0
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "20m",
+      "step": "10u"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_009",
+        "kind": "voltage",
+        "target": {
+          "netName": "vc"
+        },
+        "label": "Vc",
+        "color": "#4fc3f7"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

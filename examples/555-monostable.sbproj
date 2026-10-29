@@ -1,0 +1,365 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "555 monostable (one-shot)",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "A 1 ms low pulse on TRIG at t = 10 ms starts one output pulse of T = 1.1·R·C = 1.1 × 100 kΩ × 10 µF ≈ 1.1 s."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "timer555",
+        "ref": "U1",
+        "position": {
+          "x": 20,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_002",
+        "type": "vdc",
+        "ref": "V1",
+        "position": {
+          "x": -6,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "9"
+        }
+      },
+      {
+        "id": "c_004",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": -6,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_007",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 20,
+          "y": 18
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_008",
+        "type": "resistor",
+        "ref": "R3",
+        "position": {
+          "x": 32,
+          "y": 10
+        },
+        "rotation": 270,
+        "props": {
+          "value": "470"
+        }
+      },
+      {
+        "id": "c_009",
+        "type": "led",
+        "ref": "D1",
+        "position": {
+          "x": 38,
+          "y": 13
+        },
+        "rotation": 270,
+        "props": {
+          "color": "red"
+        }
+      },
+      {
+        "id": "c_012",
+        "type": "ground",
+        "ref": "#PWR03",
+        "position": {
+          "x": 38,
+          "y": 16
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_014",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 6,
+          "y": 4
+        },
+        "rotation": 0,
+        "props": {
+          "value": "100k"
+        }
+      },
+      {
+        "id": "c_015",
+        "type": "capacitor",
+        "ref": "C1",
+        "position": {
+          "x": 6,
+          "y": 16
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10u"
+        }
+      },
+      {
+        "id": "c_016",
+        "type": "vpulse",
+        "ref": "V2",
+        "position": {
+          "x": 9,
+          "y": 26
+        },
+        "rotation": 0,
+        "props": {
+          "low": "9",
+          "high": "0",
+          "frequency": "0.25",
+          "duty": "0.025",
+          "edge": "10u",
+          "delay": "10m"
+        }
+      },
+      {
+        "id": "c_022",
+        "type": "ground",
+        "ref": "#PWR04",
+        "position": {
+          "x": 6,
+          "y": 19
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_023",
+        "type": "ground",
+        "ref": "#PWR05",
+        "position": {
+          "x": 9,
+          "y": 30
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_010",
+        "points": [
+          {
+            "x": 28,
+            "y": 10
+          },
+          {
+            "x": 29,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_011",
+        "points": [
+          {
+            "x": 35,
+            "y": 10
+          },
+          {
+            "x": 38,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_018",
+        "points": [
+          {
+            "x": 6,
+            "y": 7
+          },
+          {
+            "x": 6,
+            "y": 12
+          },
+          {
+            "x": 12,
+            "y": 12
+          }
+        ]
+      },
+      {
+        "id": "w_019",
+        "points": [
+          {
+            "x": 12,
+            "y": 8
+          },
+          {
+            "x": 9,
+            "y": 8
+          },
+          {
+            "x": 9,
+            "y": 12
+          }
+        ]
+      },
+      {
+        "id": "w_020",
+        "points": [
+          {
+            "x": 6,
+            "y": 12
+          },
+          {
+            "x": 6,
+            "y": 13
+          }
+        ]
+      },
+      {
+        "id": "w_021",
+        "points": [
+          {
+            "x": 12,
+            "y": 14
+          },
+          {
+            "x": 9,
+            "y": 14
+          },
+          {
+            "x": 9,
+            "y": 22
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_003",
+        "name": "VCC",
+        "position": {
+          "x": -6,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_005",
+        "name": "VCC",
+        "position": {
+          "x": 22,
+          "y": 2
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_006",
+        "name": "VCC",
+        "position": {
+          "x": 12,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_013",
+        "name": "out",
+        "position": {
+          "x": 28,
+          "y": 10
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_017",
+        "name": "VCC",
+        "position": {
+          "x": 6,
+          "y": 1
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_024",
+        "name": "trig",
+        "position": {
+          "x": 12,
+          "y": 14
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_025",
+        "name": "cap",
+        "position": {
+          "x": 6,
+          "y": 13
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "2",
+      "step": "1m"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_026",
+        "kind": "voltage",
+        "target": {
+          "netName": "trig"
+        },
+        "label": "Trigger",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_027",
+        "kind": "voltage",
+        "target": {
+          "netName": "out"
+        },
+        "label": "Vout",
+        "color": "#ffb74d"
+      },
+      {
+        "id": "p_028",
+        "kind": "voltage",
+        "target": {
+          "netName": "cap"
+        },
+        "label": "Vcap",
+        "color": "#81c784"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

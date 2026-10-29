@@ -1,0 +1,145 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "Resistor divider",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "9 V across 2 kΩ + 1 kΩ. The output is 9 V × 1k / (2k + 1k) = 3 V."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "vdc",
+        "ref": "V1",
+        "position": {
+          "x": 0,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "9"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 10,
+          "y": 3
+        },
+        "rotation": 0,
+        "props": {
+          "value": "2k"
+        }
+      },
+      {
+        "id": "c_003",
+        "type": "resistor",
+        "ref": "R2",
+        "position": {
+          "x": 10,
+          "y": 13
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_007",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": 0,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_008",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 10,
+          "y": 16
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_004",
+        "points": [
+          {
+            "x": 0,
+            "y": 6
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 10,
+            "y": 0
+          }
+        ]
+      },
+      {
+        "id": "w_005",
+        "points": [
+          {
+            "x": 10,
+            "y": 6
+          },
+          {
+            "x": 10,
+            "y": 10
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_006",
+        "name": "out",
+        "position": {
+          "x": 10,
+          "y": 10
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "op",
+    "tran": {
+      "stop": "10m",
+      "step": "10u"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_009",
+        "kind": "voltage",
+        "target": {
+          "netName": "out"
+        },
+        "label": "Vout",
+        "color": "#4fc3f7"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

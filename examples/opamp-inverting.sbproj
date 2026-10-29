@@ -1,0 +1,346 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "Op-amp inverting amplifier",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "Gain = −Rf/Rin = −100k/10k = −10. A 0.5 V peak, 1 kHz input gives a 5 V peak inverted output (±12 V supplies)."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "vsine",
+        "ref": "V1",
+        "position": {
+          "x": 0,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {
+          "amplitude": "0.5",
+          "frequency": "1k",
+          "acmag": "1"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "resistor",
+        "ref": "Rin",
+        "position": {
+          "x": 8,
+          "y": 10
+        },
+        "rotation": 270,
+        "props": {
+          "value": "10k"
+        }
+      },
+      {
+        "id": "c_003",
+        "type": "opamp",
+        "ref": "U1",
+        "position": {
+          "x": 20,
+          "y": 8
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_004",
+        "type": "resistor",
+        "ref": "Rf",
+        "position": {
+          "x": 20,
+          "y": 18
+        },
+        "rotation": 270,
+        "props": {
+          "value": "100k"
+        }
+      },
+      {
+        "id": "c_005",
+        "type": "resistor",
+        "ref": "RL",
+        "position": {
+          "x": 32,
+          "y": 11
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10k"
+        }
+      },
+      {
+        "id": "c_006",
+        "type": "vdc",
+        "ref": "V2",
+        "position": {
+          "x": 40,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "12"
+        }
+      },
+      {
+        "id": "c_007",
+        "type": "vdc",
+        "ref": "V3",
+        "position": {
+          "x": 46,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "12"
+        }
+      },
+      {
+        "id": "c_014",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": 12,
+          "y": 6
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_018",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 40,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_023",
+        "type": "ground",
+        "ref": "#PWR03",
+        "position": {
+          "x": 0,
+          "y": 18
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_024",
+        "type": "ground",
+        "ref": "#PWR04",
+        "position": {
+          "x": 32,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_008",
+        "points": [
+          {
+            "x": 0,
+            "y": 10
+          },
+          {
+            "x": 5,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_009",
+        "points": [
+          {
+            "x": 11,
+            "y": 10
+          },
+          {
+            "x": 12,
+            "y": 10
+          },
+          {
+            "x": 14,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_010",
+        "points": [
+          {
+            "x": 12,
+            "y": 10
+          },
+          {
+            "x": 12,
+            "y": 18
+          },
+          {
+            "x": 17,
+            "y": 18
+          }
+        ]
+      },
+      {
+        "id": "w_011",
+        "points": [
+          {
+            "x": 23,
+            "y": 18
+          },
+          {
+            "x": 28,
+            "y": 18
+          },
+          {
+            "x": 28,
+            "y": 8
+          }
+        ]
+      },
+      {
+        "id": "w_012",
+        "points": [
+          {
+            "x": 26,
+            "y": 8
+          },
+          {
+            "x": 28,
+            "y": 8
+          },
+          {
+            "x": 32,
+            "y": 8
+          }
+        ]
+      },
+      {
+        "id": "w_013",
+        "points": [
+          {
+            "x": 14,
+            "y": 6
+          },
+          {
+            "x": 12,
+            "y": 6
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_015",
+        "name": "VP",
+        "position": {
+          "x": 18,
+          "y": 2
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_016",
+        "name": "VN",
+        "position": {
+          "x": 18,
+          "y": 14
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_017",
+        "name": "VP",
+        "position": {
+          "x": 40,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_019",
+        "name": "GND",
+        "position": {
+          "x": 46,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_020",
+        "name": "VN",
+        "position": {
+          "x": 46,
+          "y": 14
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_021",
+        "name": "in",
+        "position": {
+          "x": 0,
+          "y": 10
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_022",
+        "name": "out",
+        "position": {
+          "x": 32,
+          "y": 8
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "3m",
+      "step": "2u"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "10",
+      "stop": "10MEG"
+    },
+    "probes": [
+      {
+        "id": "p_025",
+        "kind": "voltage",
+        "target": {
+          "netName": "in"
+        },
+        "label": "Vin",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_026",
+        "kind": "voltage",
+        "target": {
+          "netName": "out"
+        },
+        "label": "Vout",
+        "color": "#ffb74d"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

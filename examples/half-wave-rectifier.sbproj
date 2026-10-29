@@ -1,0 +1,199 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "Half-wave rectifier with smoothing",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "10 V peak, 50 Hz through a 1N4007-like diode into 100 µF and a 1 kΩ load. The capacitor holds the peak (≈ 9.2 V) and sags ≈ 1.8 V between peaks (ripple ≈ I/(f·C))."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "vsine",
+        "ref": "V1",
+        "position": {
+          "x": 0,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "amplitude": "10",
+          "frequency": "50"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "diode_rectifier",
+        "ref": "D1",
+        "position": {
+          "x": 7,
+          "y": 0
+        },
+        "rotation": 180,
+        "props": {}
+      },
+      {
+        "id": "c_003",
+        "type": "capacitor_polarized",
+        "ref": "C1",
+        "position": {
+          "x": 14,
+          "y": 3
+        },
+        "rotation": 0,
+        "props": {
+          "value": "100u"
+        }
+      },
+      {
+        "id": "c_004",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 20,
+          "y": 3
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_010",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": 0,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_011",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 14,
+          "y": 6
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_012",
+        "type": "ground",
+        "ref": "#PWR03",
+        "position": {
+          "x": 20,
+          "y": 6
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_005",
+        "points": [
+          {
+            "x": 0,
+            "y": 6
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 4,
+            "y": 0
+          }
+        ]
+      },
+      {
+        "id": "w_006",
+        "points": [
+          {
+            "x": 10,
+            "y": 0
+          },
+          {
+            "x": 14,
+            "y": 0
+          }
+        ]
+      },
+      {
+        "id": "w_007",
+        "points": [
+          {
+            "x": 14,
+            "y": 0
+          },
+          {
+            "x": 20,
+            "y": 0
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_008",
+        "name": "in",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_009",
+        "name": "out",
+        "position": {
+          "x": 20,
+          "y": 0
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "100m",
+      "step": "20u"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_013",
+        "kind": "voltage",
+        "target": {
+          "netName": "in"
+        },
+        "label": "Vin",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_014",
+        "kind": "voltage",
+        "target": {
+          "netName": "out"
+        },
+        "label": "Vout",
+        "color": "#ffb74d"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

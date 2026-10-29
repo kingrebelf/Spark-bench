@@ -1,0 +1,147 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "RC low-pass (Bode)",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "First-order low-pass: R = 1.59 kΩ, C = 100 nF, corner frequency fc = 1/(2πRC) ≈ 1 kHz. Above fc the output falls 20 dB per decade."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "vsine",
+        "ref": "V1",
+        "position": {
+          "x": 0,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "amplitude": "1",
+          "frequency": "1k",
+          "acmag": "1"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 7,
+          "y": 0
+        },
+        "rotation": 270,
+        "props": {
+          "value": "1.59k"
+        }
+      },
+      {
+        "id": "c_003",
+        "type": "capacitor",
+        "ref": "C1",
+        "position": {
+          "x": 14,
+          "y": 3
+        },
+        "rotation": 0,
+        "props": {
+          "value": "100n"
+        }
+      },
+      {
+        "id": "c_007",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": 0,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_008",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 14,
+          "y": 6
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_004",
+        "points": [
+          {
+            "x": 0,
+            "y": 6
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 4,
+            "y": 0
+          }
+        ]
+      },
+      {
+        "id": "w_005",
+        "points": [
+          {
+            "x": 10,
+            "y": 0
+          },
+          {
+            "x": 14,
+            "y": 0
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_006",
+        "name": "out",
+        "position": {
+          "x": 14,
+          "y": 0
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "ac",
+    "tran": {
+      "stop": "10m",
+      "step": "10u"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "10",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_009",
+        "kind": "voltage",
+        "target": {
+          "netName": "out"
+        },
+        "label": "Vout",
+        "color": "#4fc3f7"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

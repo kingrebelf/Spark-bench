@@ -4,10 +4,10 @@
 // Building blocks (all smooth, so Newton converges):
 //  - input level:  0.5·(1 + tanh((V(in) − VCC/2) / 50 mV))
 //  - delay:        ideal logic value → 1 kΩ/C low-pass (C set so the 50 % crossing is at td) → regenerating buffer
-//  - storage:      a 1 pF node driven by g·(target − V) with g = 1 mS; in "hold" the target is the node's own
-//                  level, which makes it bistable (a latch). Edge-triggered flip-flops are master-slave pairs.
+//  - storage:      a 1 pF node driven toward its data while transparent and left floating (pure capacitor)
+//                  while holding (see store()). Edge-triggered flip-flops are master-slave pairs.
 import type { ComponentDef, Shape, SpiceEmitContext } from "../core/types";
-import { circle, el, hlead, line, lvl, modelProp, poly, rect, sn, text, vlead } from "./util";
+import { circle, el, hlead, line, lvl, modelProp, poly, rect, sn, step, text, vlead } from "./util";
 
 const delayProps = [
   modelProp("td", "Propagation delay", "10n", "s", "Input change to output 50 % crossing."),
@@ -17,6 +17,12 @@ const digitalNote = (what: string) =>
   `Behavioral analog model of ${what}: ideal switching threshold at VCC/2, outputs swing to the rails through the output resistance after the propagation delay. Inputs are 100 MΩ to GND. Not modeled: noise margins of a real family, input capacitance, output current limits, and supply current drawn by the outputs (it returns via GND, not VCC).`;
 
 const VCC = "V(vcc,gnd)";
+/**
+ * Clock level for master/slave latches with non-overlapping thresholds: "hi" is 1 above 60 % of
+ * VCC, "lo" is 1 below 40 %. Between them both latches hold, so a slow edge can't race.
+ */
+const clkHi = (node: string) => step(`V(${node},gnd)-0.6*${VCC}`);
+const clkLo = (node: string) => step(`0.4*${VCC}-V(${node},gnd)`);
 
 function header(name: string, pins: string[], inputs: string[]): string[] {
   return [
@@ -39,16 +45,32 @@ function outStage(src: string, pin: string, inv = false): string[] {
   ];
 }
 
+interface StoreDrive {
+  /** 0..1: how transparent the node is to `data` (1 = follows data, 0 = holds). */
+  sel: string;
+  /** Value to follow when transparent (volts). */
+  data: string;
+  /** 0..1 asynchronous set / clear (set wins). */
+  set?: string;
+  clr?: string;
+  /** Value at the DC operating point (time = 0), so every run starts from a defined state. */
+  init?: string;
+}
+
 /**
- * Storage node driven toward `target` (an expression in volts). At the DC operating point
- * (time = 0) it is driven to `init` instead, so every run starts from a defined state (Q = 0
- * unless preset) rather than whichever latch state Newton happens to find.
+ * Storage node: a 1 pF capacitor driven by 1 mS toward its data while transparent, and by
+ * (almost) nothing while holding, so it keeps its value however large the simulator's time
+ * step is. A 1 nS regenerative term pulls a held value back to the nearest rail over ~1 ms.
  */
-const store = (node: string, target: string, init = "0") => [
-  `Bs_${node} gnd ${node} I = 1m*((time > 0 ? (${target}) : (${init}))-V(${node},gnd))`,
-  `Cs_${node} ${node} gnd 1p`,
-  `Rs_${node} ${node} gnd 1g`,
-];
+function store(node: string, d: StoreDrive): string[] {
+  const v = `V(${node},gnd)`;
+  const set = d.set ?? "0", clr = d.clr ?? "0";
+  const drive = `${set}*(${VCC}-${v})+(1-${set})*(${clr}*(0-${v})+(1-${clr})*${d.sel}*((${d.data})-${v}))`;
+  return [
+    `Bs_${node} gnd ${node} I = time > 0 ? 1m*(${drive})+1n*(${VCC}*${lvl(node)}-${v}) : 1m*((${d.init ?? "0"})-${v})`,
+    `Cs_${node} ${node} gnd 1p`,
+  ];
+}
 
 function instance(ctx: SpiceEmitContext, subckt: string, text: string, pinOrder: string[]): string[] {
   ctx.define(`subckt:${subckt}`, text);
@@ -158,13 +180,12 @@ export const gates: ComponentDef[] = [gate("AND"), gate("NAND"), gate("OR"), gat
 // ---------------------------------------------------------------- flip-flops
 
 const DFF_SUBCKT = (() => {
-  const sc = lvl("c"), pr = `(1-${lvl("pre")})`, cl = `(1-${lvl("clr")})`;
-  const lm = lvl("m"), ls = lvl("sl");
+  const pr = `(1-${lvl("pre")})`, cl = `(1-${lvl("clr")})`;
   return [
     ...header("SB_DFF", ["d", "c", "q", "qn", "pre", "clr", "vcc", "gnd"], ["d", "c", "pre", "clr"]),
     // Master is transparent while the clock is low, slave while it is high: Q takes D at the rising edge.
-    ...store("m", `${VCC}*(${pr}+(1-${pr})*(1-${cl})*((1-${sc})*${lvl("d")}+${sc}*${lm}))`, `${VCC}*${pr}`),
-    ...store("sl", `${VCC}*(${pr}+(1-${pr})*(1-${cl})*(${sc}*${lm}+(1-${sc})*${ls}))`, `${VCC}*${pr}`),
+    ...store("m", { sel: clkLo("c"), data: `${VCC}*${lvl("d")}`, set: pr, clr: cl, init: `${VCC}*${pr}` }),
+    ...store("sl", { sel: clkHi("c"), data: `${VCC}*${lvl("m")}`, set: pr, clr: cl, init: `${VCC}*${pr}` }),
     ...outStage("sl", "q"), ...outStage("sl", "qn", true),
     `.ends SB_DFF`,
   ].join("\n");
@@ -202,14 +223,13 @@ export const dFlipFlop: ComponentDef = {
 };
 
 const JK_SUBCKT = (() => {
-  const sc = lvl("c"), cl = `(1-${lvl("r")})`;
-  const lm = lvl("m"), ls = lvl("sl");
+  const cl = `(1-${lvl("r")})`, ls = lvl("sl");
   const next = `(${lvl("j")}*(1-${ls})+(1-${lvl("k")})*${ls})`;
   return [
     ...header("SB_JKFF", ["j", "k", "c", "q", "qn", "r", "vcc", "gnd"], ["j", "k", "c", "r"]),
     // Master transparent while the clock is high, slave while low: Q updates at the falling edge.
-    ...store("m", `${VCC}*(1-${cl})*(${sc}*${next}+(1-${sc})*${lm})`),
-    ...store("sl", `${VCC}*(1-${cl})*((1-${sc})*${lm}+${sc}*${ls})`),
+    ...store("m", { sel: clkHi("c"), data: `${VCC}*${next}`, clr: cl }),
+    ...store("sl", { sel: clkLo("c"), data: `${VCC}*${lvl("m")}`, clr: cl }),
     ...outStage("sl", "q"), ...outStage("sl", "qn", true),
     `.ends SB_JKFF`,
   ].join("\n");
@@ -245,13 +265,13 @@ export const jkFlipFlop: ComponentDef = {
 
 const COUNTER_SUBCKT = (() => {
   const rst = `(${lvl("r1")}*${lvl("r2")})`;
-  const clocks = [lvl("cp0"), lvl("cp1"), lvl("s1"), lvl("s2")];
+  const clocks = ["cp0", "cp1", "s1", "s2"];
   const lines: string[] = [];
   for (let i = 0; i < 4; i++) {
-    const ck = clocks[i], lm = lvl(`m${i}`), ls = lvl(`s${i}`);
+    const ck = clocks[i];
     // Toggle flip-flop: master copies NOT Q while the clock is high; slave copies the master while low.
-    lines.push(...store(`m${i}`, `${VCC}*(1-${rst})*(${ck}*(1-${ls})+(1-${ck})*${lm})`));
-    lines.push(...store(`s${i}`, `${VCC}*(1-${rst})*((1-${ck})*${lm}+${ck}*${ls})`));
+    lines.push(...store(`m${i}`, { sel: clkHi(ck), data: `${VCC}*(1-${lvl(`s${i}`)})`, clr: rst }));
+    lines.push(...store(`s${i}`, { sel: clkLo(ck), data: `${VCC}*${lvl(`m${i}`)}`, clr: rst }));
     lines.push(...outStage(`s${i}`, `q${i}`));
   }
   return [

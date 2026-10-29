@@ -1,0 +1,397 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "BJT common-emitter amplifier",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "2N3904-like transistor biased by 47 k/10 k from 12 V, RC = 4.7 kΩ, RE = 1 kΩ (unbypassed). Voltage gain ≈ −RC/RE ≈ −4.3 with the 100 kΩ load. Input 20 mV peak at 1 kHz."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "vsine",
+        "ref": "V1",
+        "position": {
+          "x": 0,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {
+          "amplitude": "20m",
+          "frequency": "1k",
+          "acmag": "1"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "capacitor",
+        "ref": "C1",
+        "position": {
+          "x": 8,
+          "y": 10
+        },
+        "rotation": 270,
+        "props": {
+          "value": "10u"
+        }
+      },
+      {
+        "id": "c_003",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 12,
+          "y": 4
+        },
+        "rotation": 0,
+        "props": {
+          "value": "47k"
+        }
+      },
+      {
+        "id": "c_004",
+        "type": "resistor",
+        "ref": "R2",
+        "position": {
+          "x": 12,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10k"
+        }
+      },
+      {
+        "id": "c_005",
+        "type": "2n3904",
+        "ref": "Q1",
+        "position": {
+          "x": 20,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_006",
+        "type": "resistor",
+        "ref": "RC",
+        "position": {
+          "x": 22,
+          "y": 1
+        },
+        "rotation": 0,
+        "props": {
+          "value": "4.7k"
+        }
+      },
+      {
+        "id": "c_007",
+        "type": "resistor",
+        "ref": "RE",
+        "position": {
+          "x": 22,
+          "y": 18
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_008",
+        "type": "capacitor",
+        "ref": "C2",
+        "position": {
+          "x": 26,
+          "y": 5
+        },
+        "rotation": 270,
+        "props": {
+          "value": "10u"
+        }
+      },
+      {
+        "id": "c_009",
+        "type": "resistor",
+        "ref": "RL",
+        "position": {
+          "x": 32,
+          "y": 8
+        },
+        "rotation": 0,
+        "props": {
+          "value": "100k"
+        }
+      },
+      {
+        "id": "c_010",
+        "type": "vdc",
+        "ref": "V2",
+        "position": {
+          "x": -8,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "12"
+        }
+      },
+      {
+        "id": "c_025",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": 0,
+          "y": 18
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_026",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 12,
+          "y": 17
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_027",
+        "type": "ground",
+        "ref": "#PWR03",
+        "position": {
+          "x": 22,
+          "y": 21
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_028",
+        "type": "ground",
+        "ref": "#PWR04",
+        "position": {
+          "x": 32,
+          "y": 11
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_029",
+        "type": "ground",
+        "ref": "#PWR05",
+        "position": {
+          "x": -8,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_011",
+        "points": [
+          {
+            "x": 0,
+            "y": 10
+          },
+          {
+            "x": 5,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_012",
+        "points": [
+          {
+            "x": 11,
+            "y": 10
+          },
+          {
+            "x": 12,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_013",
+        "points": [
+          {
+            "x": 12,
+            "y": 10
+          },
+          {
+            "x": 16,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_014",
+        "points": [
+          {
+            "x": 12,
+            "y": 7
+          },
+          {
+            "x": 12,
+            "y": 11
+          }
+        ]
+      },
+      {
+        "id": "w_015",
+        "points": [
+          {
+            "x": 22,
+            "y": 4
+          },
+          {
+            "x": 22,
+            "y": 6
+          }
+        ]
+      },
+      {
+        "id": "w_016",
+        "points": [
+          {
+            "x": 22,
+            "y": 5
+          },
+          {
+            "x": 23,
+            "y": 5
+          }
+        ]
+      },
+      {
+        "id": "w_017",
+        "points": [
+          {
+            "x": 22,
+            "y": 14
+          },
+          {
+            "x": 22,
+            "y": 15
+          }
+        ]
+      },
+      {
+        "id": "w_018",
+        "points": [
+          {
+            "x": 29,
+            "y": 5
+          },
+          {
+            "x": 32,
+            "y": 5
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_019",
+        "name": "VCC",
+        "position": {
+          "x": 12,
+          "y": 1
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_020",
+        "name": "VCC",
+        "position": {
+          "x": 22,
+          "y": -2
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_021",
+        "name": "VCC",
+        "position": {
+          "x": -8,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_022",
+        "name": "in",
+        "position": {
+          "x": 0,
+          "y": 10
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_023",
+        "name": "out",
+        "position": {
+          "x": 32,
+          "y": 5
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_024",
+        "name": "c",
+        "position": {
+          "x": 22,
+          "y": 6
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "5m",
+      "step": "2u"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "10",
+      "stop": "10MEG"
+    },
+    "probes": [
+      {
+        "id": "p_030",
+        "kind": "voltage",
+        "target": {
+          "netName": "in"
+        },
+        "label": "Vin",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_031",
+        "kind": "voltage",
+        "target": {
+          "netName": "out"
+        },
+        "label": "Vout",
+        "color": "#ffb74d"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

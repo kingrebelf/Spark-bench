@@ -1,0 +1,473 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "Logic gate demo",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "Two square waves (A = 1 kHz, B = 500 Hz) step through all four input combinations every 2 ms. AND, OR and XOR outputs show their truth tables over time (5 V logic)."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "vpulse",
+        "ref": "VA",
+        "position": {
+          "x": 0,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "low": "0",
+          "high": "5",
+          "frequency": "1k",
+          "duty": "50",
+          "edge": "100n"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "vpulse",
+        "ref": "VB",
+        "position": {
+          "x": 0,
+          "y": 30
+        },
+        "rotation": 0,
+        "props": {
+          "low": "0",
+          "high": "5",
+          "frequency": "500",
+          "duty": "50",
+          "edge": "100n"
+        }
+      },
+      {
+        "id": "c_003",
+        "type": "vdc",
+        "ref": "V1",
+        "position": {
+          "x": 0,
+          "y": 50
+        },
+        "rotation": 0,
+        "props": {
+          "value": "5"
+        }
+      },
+      {
+        "id": "c_005",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": 0,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_007",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 0,
+          "y": 34
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_009",
+        "type": "ground",
+        "ref": "#PWR03",
+        "position": {
+          "x": 0,
+          "y": 54
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_010",
+        "type": "gate_and",
+        "ref": "U1",
+        "position": {
+          "x": 24,
+          "y": 0
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_011",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 38,
+          "y": 3
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10k"
+        }
+      },
+      {
+        "id": "c_015",
+        "type": "ground",
+        "ref": "#PWR04",
+        "position": {
+          "x": 24,
+          "y": 8
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_018",
+        "type": "ground",
+        "ref": "#PWR05",
+        "position": {
+          "x": 38,
+          "y": 6
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_019",
+        "type": "gate_or",
+        "ref": "U2",
+        "position": {
+          "x": 24,
+          "y": 20
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_020",
+        "type": "resistor",
+        "ref": "R2",
+        "position": {
+          "x": 38,
+          "y": 23
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10k"
+        }
+      },
+      {
+        "id": "c_024",
+        "type": "ground",
+        "ref": "#PWR06",
+        "position": {
+          "x": 24,
+          "y": 28
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_027",
+        "type": "ground",
+        "ref": "#PWR07",
+        "position": {
+          "x": 38,
+          "y": 26
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_028",
+        "type": "gate_xor",
+        "ref": "U3",
+        "position": {
+          "x": 24,
+          "y": 40
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_029",
+        "type": "resistor",
+        "ref": "R3",
+        "position": {
+          "x": 38,
+          "y": 43
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10k"
+        }
+      },
+      {
+        "id": "c_033",
+        "type": "ground",
+        "ref": "#PWR08",
+        "position": {
+          "x": 24,
+          "y": 48
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_036",
+        "type": "ground",
+        "ref": "#PWR09",
+        "position": {
+          "x": 38,
+          "y": 46
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_016",
+        "points": [
+          {
+            "x": 34,
+            "y": 0
+          },
+          {
+            "x": 38,
+            "y": 0
+          }
+        ]
+      },
+      {
+        "id": "w_025",
+        "points": [
+          {
+            "x": 34,
+            "y": 20
+          },
+          {
+            "x": 38,
+            "y": 20
+          }
+        ]
+      },
+      {
+        "id": "w_034",
+        "points": [
+          {
+            "x": 34,
+            "y": 40
+          },
+          {
+            "x": 38,
+            "y": 40
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_004",
+        "name": "A",
+        "position": {
+          "x": 0,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_006",
+        "name": "B",
+        "position": {
+          "x": 0,
+          "y": 26
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_008",
+        "name": "VCC",
+        "position": {
+          "x": 0,
+          "y": 46
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_012",
+        "name": "A",
+        "position": {
+          "x": 12,
+          "y": -2
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_013",
+        "name": "B",
+        "position": {
+          "x": 12,
+          "y": 2
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_014",
+        "name": "VCC",
+        "position": {
+          "x": 24,
+          "y": -8
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_017",
+        "name": "and",
+        "position": {
+          "x": 38,
+          "y": 0
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_021",
+        "name": "A",
+        "position": {
+          "x": 12,
+          "y": 18
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_022",
+        "name": "B",
+        "position": {
+          "x": 12,
+          "y": 22
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_023",
+        "name": "VCC",
+        "position": {
+          "x": 24,
+          "y": 12
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_026",
+        "name": "or",
+        "position": {
+          "x": 38,
+          "y": 20
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_030",
+        "name": "A",
+        "position": {
+          "x": 12,
+          "y": 38
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_031",
+        "name": "B",
+        "position": {
+          "x": 12,
+          "y": 42
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_032",
+        "name": "VCC",
+        "position": {
+          "x": 24,
+          "y": 32
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_035",
+        "name": "xor",
+        "position": {
+          "x": 38,
+          "y": 40
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "4m",
+      "step": "1u"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_037",
+        "kind": "voltage",
+        "target": {
+          "netName": "A"
+        },
+        "label": "A",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_038",
+        "kind": "voltage",
+        "target": {
+          "netName": "B"
+        },
+        "label": "B",
+        "color": "#ffb74d"
+      },
+      {
+        "id": "p_039",
+        "kind": "voltage",
+        "target": {
+          "netName": "and"
+        },
+        "label": "AND",
+        "color": "#81c784"
+      },
+      {
+        "id": "p_040",
+        "kind": "voltage",
+        "target": {
+          "netName": "or"
+        },
+        "label": "OR",
+        "color": "#e57373"
+      },
+      {
+        "id": "p_041",
+        "kind": "voltage",
+        "target": {
+          "netName": "xor"
+        },
+        "label": "XOR",
+        "color": "#ba68c8"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}
