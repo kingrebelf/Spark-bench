@@ -93,8 +93,8 @@ export function LiveParts() {
               const y = wiperY(v);
               return <>
                 <path d={`M 1.0 ${y} L 1.9 ${y - 0.5} L 1.9 ${y + 0.5} Z`} fill="var(--accent)" />
-                <text x={2.3} y={y} fontSize={0.95} dominantBaseline="middle" fill="var(--accent)" fontFamily="var(--mono)"
-                  transform={c.rotation || c.mirror ? `rotate(${-c.rotation} 2.3 ${y}) scale(${c.mirror ? -1 : 1},1)` : undefined}>{Math.round(v)} %</text>
+                <text x={-1.2} y={y} fontSize={0.95} dominantBaseline="middle" textAnchor="end" fill="var(--accent)" fontFamily="var(--mono)"
+                  transform={c.rotation || c.mirror ? `rotate(${-c.rotation} -1.2 ${y})` : undefined}>{Math.round(v)} %</text>
               </>;
             })()}
             {enabled && (

@@ -55,6 +55,8 @@ export function liveValue(c: ComponentInstance, def: ComponentDef, t: number | n
 /** Symbol y of the potentiometer wiper for a position in % (pin 1 = 100 % at the top). */
 export const wiperY = (pct: number) => 1.6 - 3.2 * Math.min(1, Math.max(0, pct / 100));
 
+const DRAG_SPAN = 12;
+
 type Drag =
   | { kind: "momentary"; id: string; t: number }
   | { kind: "slider"; id: string; c: ComponentInstance; y0: number; v0: number; last: number; lastT: number; min: number; max: number };
@@ -80,7 +82,8 @@ export const liveInput = {
     if (drag?.kind !== "slider") return;
     const l = toLocal(drag.c, p);
     const span = drag.max - drag.min;
-    const v = Math.round(Math.min(drag.max, Math.max(drag.min, drag.v0 + (drag.y0 - l.y) / 3.2 * span)));
+    // The full range takes DRAG_SPAN grid units of pointer travel (the body itself is only 3.2 long).
+    const v = Math.round(Math.min(drag.max, Math.max(drag.min, drag.v0 + (drag.y0 - l.y) / DRAG_SPAN * span)));
     const t = now(), rate = usePlayback.getState().rate;
     if (v === drag.last) return;
     // Thin samples during a drag: at most ~20 recorded steps per second of playback.
