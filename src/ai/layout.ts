@@ -296,6 +296,10 @@ function buildOnce(base: Project, proposal: Proposal, nets: ResolvedNet[], looku
   // Re-tag kept groups' points with their desired net so own-net routes may touch them.
   for (const [i, gs] of groups) for (const g of gs) for (const p of g.points) ob.points.set(keyOf(p), i);
 
+  // Where to attach a label/ground to a kept net: prefer a wire corner or end over a pin tip (keeps text off symbols).
+  const pinTips = new Set<string>();
+  for (const c of sch.components) { const def = lookup(c.type); if (def) for (const pin of def.pins) pinTips.add(keyOf(pinWorldPosition(c, def, pin.id)!)); }
+  const anchorOf = (pts: Point[]): Point => pts.find((p) => !pinTips.has(keyOf(p)) && !sch.labels.some((l) => keyOf(l.position) === keyOf(p))) ?? pts[0];
   const labelFor = (i: number): string => {
     let name = nets[i].label;
     let n = 1;
@@ -355,7 +359,7 @@ function buildOnce(base: Project, proposal: Proposal, nets: ResolvedNet[], looku
         if (s) addGround(s.end, s.dir, i);
         else addGround(pinWorldPosition(m.inst, lookup(m.inst.type)!, m.pinId)!, stubDir(m.inst, lookup(m.inst.type)!, m.pinId), i);
       });
-      for (const g of gs) if (!g.isGround && g.points.length) addGround(g.points[0], { x: 0, y: 1 }, i);
+      for (const g of gs) if (!g.isGround && g.points.length) addGround(anchorOf(g.points), { x: 0, y: 1 }, i);
       continue;
     }
 
@@ -382,7 +386,7 @@ function buildOnce(base: Project, proposal: Proposal, nets: ResolvedNet[], looku
     });
     for (const g of gs) {
       if (g.labels.some((l) => l.toLowerCase() === name.toLowerCase())) continue;
-      if (g.points.length) addLabel(name, g.points[0], i);
+      if (g.points.length) addLabel(name, anchorOf(g.points), i);
     }
   }
 
