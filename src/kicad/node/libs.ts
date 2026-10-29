@@ -5,7 +5,8 @@ import { existsSync, promises as fs, readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { arg, children, parse, type SList } from "../sexpr";
-import { embedSymbol, librarySymbols, scanSymbolNames, splitLibId } from "../symbols";
+import { embedSymbol, librarySymbols, scanSymbolNames, splitLibId, symbolInfo } from "../symbols";
+import type { LibraryFacts, SymbolFacts } from "../mapping";
 import type { KicadInstall } from "./install";
 
 export interface LibEntry { nickname: string; uri: string }
@@ -105,6 +106,21 @@ export class KicadLibraries {
     const fp = this.footprint(fpId);
     if (!fp) return undefined;
     return [...new Set(children(fp, "pad").map((p) => arg(p) ?? "").filter(Boolean))];
+  }
+
+  /** Plain-data facts for the mapping review. */
+  facts(symbolIds: string[], footprintIds: string[]): LibraryFacts {
+    const symbols: Record<string, SymbolFacts | null> = {};
+    for (const id of symbolIds) {
+      const s = this.symbol(id);
+      if (!s) { symbols[id] = null; continue; }
+      const i = symbolInfo(s);
+      symbols[id] = { pins: i.pins.map((p) => ({ number: p.number, name: p.name, unit: p.unit })), unitCount: i.unitCount,
+        power: i.power, onBoard: i.onBoard, description: i.props.Description ?? "" };
+    }
+    const footprints: Record<string, string[] | null> = {};
+    for (const id of footprintIds) footprints[id] = this.footprintPads(id) ?? null;
+    return { symbols, footprints };
   }
 
   async symbolIndex(): Promise<SymbolSearchHit[]> {
