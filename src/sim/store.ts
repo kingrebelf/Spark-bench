@@ -17,6 +17,8 @@ export interface ResultBasis {
   settings: string;
   /** Probe ids present at run time. */
   probeIds: string[];
+  /** The project exactly as simulated. Probe -> vector mapping uses it, because auto net names (N001…) shift after edits. */
+  project: Project;
 }
 
 interface SimState {
@@ -66,7 +68,7 @@ export const useSim = create<SimState>((set, get) => ({
     usePlayback.getState().resetFor(result);
     set({
       status: result.ok ? "done" : "failed", result, startedAt: null, resultRevision: Date.now(),
-      basis: { schematic: project.schematic, models: project.models, settings: settingsKey(project, kind), probeIds: project.simulation.probes.map((p) => p.id) },
+      basis: { schematic: project.schematic, models: project.models, settings: settingsKey(project, kind), probeIds: project.simulation.probes.map((p) => p.id), project },
     });
     if (pendingRerun) { pendingRerun = false; scheduleContinuous(); }
   },
@@ -104,6 +106,12 @@ export const useStaleness = (): Staleness => {
   const basis = useSim((s) => s.basis);
   const analysis = useSim((s) => s.result?.analysis);
   return staleness(project, basis, analysis);
+};
+
+/** The project the shown result was computed from (falls back to the current one). */
+export const useRunProject = (): Project => {
+  const current = useProject((s) => s.project);
+  return useSim((s) => s.basis?.project) ?? current;
 };
 
 /** True when the schematic or analysis settings changed after the shown result was computed. */

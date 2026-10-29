@@ -8,7 +8,7 @@ import { useProject } from "../core/store";
 import { formatSI } from "../core/units";
 import { interpolate } from "../scope/measure";
 import { resolveProbes, vectorForProbe } from "./probes";
-import { usePlayback, useSim, useStaleness } from "./store";
+import { usePlayback, useRunProject, useSim, useStaleness } from "./store";
 import { probeLabel } from "./traces";
 
 export function SimCanvasOverlay() {
@@ -18,6 +18,9 @@ export function SimCanvasOverlay() {
   const stale = useStaleness();
   const conn = useMemo(() => computeConnectivity(project), [project]);
   const probes = useMemo(() => resolveProbes(project, conn), [project, conn]);
+  // Values come from the probe as resolved in the simulated project; positions from the current one.
+  const runProject = useRunProject();
+  const atRun = useMemo(() => new Map(resolveProbes(runProject).map((r) => [r.probe.id, r])), [runProject]);
   if (!probes.length) return null;
 
   // Labels stack upward when they would overlap an earlier one.
@@ -32,9 +35,10 @@ export function SimCanvasOverlay() {
           if (c) at = { x: c.position.x + 1.2, y: c.position.y - 1 };
         }
         if (!at) return null;
-        const label = probeLabel(r, project);
+        const rr = atRun.get(r.probe.id);
+        const label = rr && !rr.problem ? probeLabel(rr, runProject) : probeLabel(r, project);
         let value: string | null = null;
-        const v = result?.ok ? vectorForProbe(r, result) : undefined;
+        const v = result?.ok && rr ? vectorForProbe(rr, result) : undefined;
         if (v && result) {
           if (result.analysis === "op") value = formatSI(v.real[0], v.unit, 3);
           else if (result.analysis === "tran" && result.x) {

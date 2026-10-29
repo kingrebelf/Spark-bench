@@ -9,7 +9,7 @@ import type { NetlistResult } from "../core/netlist";
 import type { EngineOutput, SpiceEngine } from "../core/simulate";
 import type { AnalysisKind, ComponentDef, Diagnostic, Probe, Project, SimResult, Vector } from "../core/types";
 
-export const PROBE_COLORS = ["#4fc3f7", "#ffb74d", "#81c784", "#e57373", "#ba68c8", "#fff176", "#4dd0e1", "#f06292", "#aed581", "#ff8a65"];
+export const PROBE_COLORS = ["#4fc3f7", "#ffb74d", "#81c784", "#e57373", "#ba68c8", "#e0a800", "#4dd0e1", "#f06292", "#7cb342", "#ff8a65"];
 
 /** Which internal current ngspice can report for an element, by its leading letter. */
 const CURRENT_PARAM: Record<string, string> = { r: "i", c: "i", l: "i", d: "id", q: "ic", m: "id", j: "id", b: "i", g: "i", f: "i", h: "i", i: "current" };

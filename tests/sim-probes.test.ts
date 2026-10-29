@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Builder, divider, engine } from "./helpers";
 import { runSimulation } from "../src/sim/run";
 import { addSaves, resolveProbes, vectorForProbe } from "../src/sim/probes";
+import { probeTraces } from "../src/sim/traces";
 import type { Project } from "../src/core/types";
 
 const addProbe = (p: Project, probe: Project["simulation"]["probes"][number]) => { p.simulation.probes.push(probe); };
@@ -72,4 +73,30 @@ describe("probe mapping", () => {
     b.project.schematic.components = b.project.schematic.components.filter((c) => c.id !== R1.id);
     expect(resolveProbes(b.project)[0].problem).toMatch(/removed/);
   });
+});
+
+describe("probe mapping against a stale result", () => {
+  it("never shows another node's data when auto net names shift after an edit", async () => {
+    // Two unlabeled nets: N001 (V1+/R1.1) and N002 (R1.2/R2.1, 5 V).
+    const { b, R1 } = divider();
+    b.project.schematic.labels = [];
+    const p = b.project;
+    p.simulation.probes.push({ id: "pm", kind: "voltage", target: { point: b.pin(R1, "2") }, label: "mid" });
+    const r = await runSimulation(p, engine(), "op");
+    expect(r.ok).toBe(true);
+    const before = probeTraces(p, r, p).traces[0];
+    expect(before.vector.real[0]).toBeCloseTo(5, 6);
+
+    // Edit: add an unconnected part whose pins sort before the probed node, so auto numbering shifts.
+    const edited: Project = structuredClone(p);
+    edited.schematic.components.unshift({ id: "cX", type: "resistor", ref: "R7", position: { x: 1, y: 30 }, rotation: 0, props: { value: "1k" } });
+    // Precondition: the probed node now has a different auto name.
+    expect(resolveProbes(edited)[0].netName).not.toBe(resolveProbes(p)[0].netName);
+    // Resolving naively against the edited project would pick a different vector.
+    expect(vectorForProbe(resolveProbes(edited)[0], r)?.real[0]).not.toBeCloseTo(5, 3);
+    const after = probeTraces(edited, r, p).traces[0];
+    // The value still belongs to the probed node at run time, under its run-time name.
+    expect(after.vector.real[0]).toBeCloseTo(5, 6);
+    expect(after.label).toBe(before.label);
+  }, 60_000);
 });

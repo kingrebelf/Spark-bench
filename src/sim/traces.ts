@@ -25,17 +25,24 @@ export interface ProbeTraces {
   missing: { probeId: string; label: string; reason: string }[];
 }
 
-export function probeTraces(project: Project, result: SimResult): ProbeTraces {
+/**
+ * Traces for the current project's probes. Each probe is resolved against `runProject` (the project as
+ * simulated), so a stale result never shows another node's data under a renumbered auto net name.
+ */
+export function probeTraces(project: Project, result: SimResult, runProject: Project = project): ProbeTraces {
   const traces: Trace[] = [];
   const missing: ProbeTraces["missing"] = [];
-  for (const r of resolveProbes(project, computeConnectivity(project))) {
-    const label = probeLabel(r, project);
+  const atRun = new Map(resolveProbes(runProject, computeConnectivity(runProject)).map((r) => [r.probe.id, r]));
+  for (const current of resolveProbes(project, computeConnectivity(project))) {
+    const r = atRun.get(current.probe.id);
+    if (!r) { missing.push({ probeId: current.probe.id, label: probeLabel(current, project), reason: "Added after this run. Run again to see its values." }); continue; }
+    const label = probeLabel(r, runProject);
     if (r.problem) { missing.push({ probeId: r.probe.id, label, reason: r.problem }); continue; }
     const v = vectorForProbe(r, result);
     if (!v) {
       missing.push({ probeId: r.probe.id, label, reason: r.probe.kind === "current" && result.analysis === "ac"
         ? "ngspice can't report this part's current in AC analysis."
-        : "This run has no data for it (probe added or circuit changed after the run). Run again." });
+        : "This run has no data for it. Run again." });
       continue;
     }
     traces.push({ id: r.probe.id, label, color: r.color, vector: v, probeId: r.probe.id });

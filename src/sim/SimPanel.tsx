@@ -14,7 +14,7 @@ import { Plot, type PaneSpec, type PlotHandle, type PlotSeries } from "../scope/
 import { resultToCsv, safeFileName, saveText, savePng } from "./exporting";
 import { addSaves, planCurrentSaves, PROBE_COLORS } from "./probes";
 import { acSources, suggestAc, suggestTran, validateSetup } from "./setup";
-import { BASE_SECONDS, SPEEDS, usePlayback, useSim, useStaleness } from "./store";
+import { BASE_SECONDS, SPEEDS, usePlayback, useRunProject, useSim, useStaleness } from "./store";
 import { allTraces, magDb, phaseDeg, probeTraces, type Trace } from "./traces";
 import "./sim.css";
 
@@ -24,6 +24,8 @@ const readHeight = () => { try { return Number(localStorage.getItem(HEIGHT_KEY))
 export function SimPanel() {
   const project = useProject((s) => s.project);
   const { status, result, blocked } = useSim();
+  const runProject = useRunProject();
+  const stale = useStaleness();
   const [height, setHeight] = useState(readHeight);
   const [notice, setNotice] = useState<string | null>(null);
   const plotRef = useRef<PlotHandle>(null);
@@ -31,10 +33,10 @@ export function SimPanel() {
 
   const traces = useMemo(() => {
     if (!result?.ok) return { traces: [] as Trace[], missing: [] as ReturnType<typeof probeTraces>["missing"] };
-    const p = probeTraces(project, result);
-    if (showAll || project.simulation.probes.length === 0) return { traces: allTraces(project, result), missing: p.missing };
+    const p = probeTraces(project, result, runProject);
+    if (showAll || project.simulation.probes.length === 0) return { traces: allTraces(runProject, result), missing: p.missing };
     return p;
-  }, [project, result, showAll]);
+  }, [project, runProject, result, showAll]);
 
   const onResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -54,8 +56,8 @@ export function SimPanel() {
     if (r) flash(`Saved ${r}`);
   };
   const exportNetlist = async () => {
-    // Prefer the netlist that actually ran; otherwise generate what Run would send now.
-    let text = result?.netlist;
+    // The netlist that actually ran while it matches the schematic; otherwise what Run would send now.
+    let text = result && !stale.any ? result.netlist : "";
     if (!text) {
       const nl = generateNetlist(project);
       text = addSaves(nl.text, planCurrentSaves(project, nl, project.simulation.analysis).saves);
@@ -82,7 +84,7 @@ export function SimPanel() {
           <div className="sim-exports">
             <span className="sec-title">Export</span>
             <button className="btn sm" onClick={exportCsv} disabled={!result?.ok} title={result?.ok ? "Save the shown traces as CSV" : "Run a simulation first"}>CSV</button>
-            <button className="btn sm" onClick={exportNetlist} title={result ? "Save the netlist that was sent to ngspice" : "Save the netlist Run would send now"}>Netlist .cir</button>
+            <button className="btn sm" onClick={exportNetlist} title={result && !stale.any ? "Save the netlist that was sent to ngspice for the shown result" : "Save the netlist Run would send for the current schematic"}>Netlist .cir</button>
             <button className="btn sm" onClick={exportPng} disabled={!hasPlot} title={hasPlot ? "Download the plot as PNG" : "Needs a transient or AC plot"}>Plot PNG</button>
             {notice && <div className="notice">{notice}</div>}
           </div>
@@ -212,6 +214,7 @@ function ProbesSection() {
   const selection = useProject((s) => s.selection);
   const result = useSim((s) => s.result);
   const t = usePlayback((s) => s.t);
+  const runProject = useRunProject();
   const conn = useMemo(() => computeConnectivity(project), [project]);
   const refOf = (id: string) => project.schematic.components.find((c) => c.id === id)?.ref ?? "?";
 
@@ -249,7 +252,7 @@ function ProbesSection() {
   };
   const canFromSel = selection.some((id) => parts.some((c) => c.id === id) || project.schematic.wires.some((w) => w.id === id));
 
-  const tr = result?.ok ? probeTraces(project, result) : null;
+  const tr = result?.ok ? probeTraces(project, result, runProject) : null;
   const valueOf = (probeId: string) => {
     const tc = tr?.traces.find((x) => x.probeId === probeId);
     if (!tc || !result) return null;
