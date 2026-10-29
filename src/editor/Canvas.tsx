@@ -15,6 +15,7 @@ import { SymbolShapes } from "./SymbolView";
 import { PART_MIME, useEditor, usePointer, type Hover, type View } from "./store";
 import { HelpOverlay, StatusBar } from "./StatusBar";
 import "./editor.css";
+import { SimCanvasOverlay } from "../sim/CanvasOverlay";
 
 export { nextRef } from "./ops";
 
@@ -32,7 +33,7 @@ const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 const snap = (p: Point): Point => ({ x: Math.round(p.x), y: Math.round(p.y) });
 const editable = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true']");
 
-/** View that fits `r` into a w×h viewport with a margin. */
+/** View that fits `r` into a wÃ—h viewport with a margin. */
 export function fitView(r: Rect, w: number, h: number): View {
   const pad = 6;
   const zoom = clampZoom(Math.min(4, Math.min(w / ((r.w + pad * 2) * PX), h / ((r.h + pad * 2) * PX))));
@@ -49,7 +50,7 @@ export const Canvas = memo(function Canvas() {
   const selection = useProject((s) => s.selection);
   const result = useSim((s) => s.result);
   const schematic = project.schematic;
-  // Connectivity is O(wires × points): it lags behind edits (deferred) and is frozen while
+  // Connectivity is O(wires Ã— points): it lags behind edits (deferred) and is frozen while
   // dragging, then recomputed on release, so moving parts stays smooth on large schematics.
   const [dragging, setDragging] = useState(false);
   const frozen = useRef(schematic);
@@ -453,6 +454,7 @@ export const Canvas = memo(function Canvas() {
           <Scene schematic={schematic} selSet={selSet} conn={conn} flash={flash.on ? flash.n : 0} />
           <NetHighlight schematic={schematic} conn={conn} />
           <OpAnnotations conn={conn} opVolts={opVolts} />
+          <SimCanvasOverlay />
           <Overlay schematic={schematic} />
         </g>
       </svg>
@@ -557,7 +559,7 @@ function displayValue(inst: ComponentInstance, def: ComponentDef, key: string): 
   const pd = def.props.find((p) => p.key === key);
   const raw = String(inst.props[key] ?? pd?.default ?? "");
   if (!pd?.unit || raw === "") return raw;
-  if (/[a-zA-ZΩ°%]$/.test(raw) && !/[TGMkKmuµnpf]$/.test(raw) && !/meg$/i.test(raw)) return raw;
+  if (/[a-zA-ZÎ©Â°%]$/.test(raw) && !/[TGMkKmuÂµnpf]$/.test(raw) && !/meg$/i.test(raw)) return raw;
   return Number.isNaN(parseSI(raw)) ? raw : `${raw}${/^\d/.test(pd.unit) ? " " : ""}${pd.unit}`;
 }
 
@@ -577,7 +579,7 @@ const PartView = memo(function PartView({ inst: c, def, selected, open }: { inst
   const ty = tall ? b.y + b.h / 2 - (lines.length - 1) * 0.65 : b.y - 1 - (lines.length - 1) * 1.3;
   return (
     <g className={`part ${selected ? "selected" : ""}`}>
-      <title>{`${c.ref} · ${def.name}`}</title>
+      <title>{`${c.ref} Â· ${def.name}`}</title>
       <rect x={b.x - 0.3} y={b.y - 0.3} width={b.w + 0.6} height={b.h + 0.6} className="part-hit" />
       <g transform={`translate(${c.position.x},${c.position.y}) rotate(${c.rotation}) scale(${c.mirror ? -1 : 1},1)`} color={selected ? "var(--ed-sel)" : "var(--symbol)"}>
         <SymbolShapes shapes={def.symbol} />
@@ -744,7 +746,7 @@ function LabelEditor({ edit, view, onDone }: { edit: { id?: string; at: Point; v
           if (performance.now() - mountedAt.current < 250) { setTimeout(() => ref.current?.focus(), 0); return; }
           finish(invalid ? null : value);
         }} />
-      <span>{edit.id ? "Enter to rename · Esc to cancel" : "Name this net · Enter to place · Esc to cancel"}{/^(gnd|0)$/i.test(value.trim()) ? " · connects to ground" : ""}</span>
+      <span>{edit.id ? "Enter to rename Â· Esc to cancel" : "Name this net Â· Enter to place Â· Esc to cancel"}{/^(gnd|0)$/i.test(value.trim()) ? " Â· connects to ground" : ""}</span>
     </div>
   );
 }
