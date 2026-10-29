@@ -100,4 +100,4 @@ export const usePointer = create<PointerState>((set) => ({
 export const PART_MIME = "application/x-sparkbench-part";
 
 // Dev-only handle for scripted UI checks, next to the hub's window.__sb.
-if (import.meta.env.DEV) (window as unknown as { __sbEditor: unknown }).__sbEditor = { useEditor, usePointer };
+if (import.meta.env.DEV && typeof window !== "undefined") (window as unknown as { __sbEditor: unknown }).__sbEditor = { useEditor, usePointer };

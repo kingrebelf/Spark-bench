@@ -114,7 +114,7 @@ function ComponentProps({ comp }: { comp: ComponentInstance }) {
       {valueProps.map((p) => <PropField key={p.key} comp={comp} p={p} />)}
       <div className="row2">
         <label className="field"><span>Rotation</span>
-          <select value={comp.rotation} onChange={(e) => useProject.getState().update(`Rotate ${comp.ref}`, setComp((c) => { c.rotation = Number(e.target.value) as Rotation; }))}>
+          <select value={comp.rotation} onChange={(e) => A.rotateTo(comp.id, Number(e.target.value) as Rotation)}>
             {[0, 90, 180, 270].map((r) => <option key={r} value={r}>{r}°</option>)}
           </select>
         </label>

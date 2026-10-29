@@ -36,6 +36,17 @@ export function routeOrthogonal(a: Point, b: Point, horizontalFirst: boolean): P
   return [a, bend, b];
 }
 
+/**
+ * Like routeOrthogonal, but if the preferred corner would run the wire through a pin tip (which
+ * would silently connect to it) and the other corner would not, take the other corner.
+ */
+export function routeAvoiding(a: Point, b: Point, horizontalFirst: boolean, avoid: Point[]): Point[] {
+  const first = routeOrthogonal(a, b, horizontalFirst);
+  if (!touchesAny(first, avoid)) return first;
+  const other = routeOrthogonal(a, b, !horizontalFirst);
+  return touchesAny(other, avoid) ? first : other;
+}
+
 /** Drop repeated points and interior points that lie on a straight run (collinear). */
 export function simplifyPolyline(pts: Point[]): Point[] {
   const out: Point[] = [];

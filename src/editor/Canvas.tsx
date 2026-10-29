@@ -10,7 +10,7 @@ import type { ComponentDef, ComponentInstance, NetLabel, Point, Wire } from "../
 import { formatSI, parseSI } from "../core/units";
 import { useSim } from "../sim/store";
 import * as A from "./actions";
-import { componentBounds, hitPin, hitTest, hitWire, itemsBounds, itemsInRect, labelBounds, moveItems, routeOrthogonal, type Rect, type Schematic } from "./ops";
+import { componentBounds, hitPin, hitTest, hitWire, itemsBounds, itemsInRect, labelBounds, moveItems, pinPoints, routeAvoiding, type Rect, type Schematic } from "./ops";
 import { SymbolShapes } from "./SymbolView";
 import { PART_MIME, useEditor, usePointer, type Hover, type View } from "./store";
 import { HelpOverlay, StatusBar } from "./StatusBar";
@@ -139,7 +139,7 @@ export const Canvas = memo(function Canvas() {
     const ps = usePointer.getState();
     if (!ps.wire.length) { ps.set({ wire: [g] }); dirLocked.current = false; return; }
     const last = ps.wire[ps.wire.length - 1];
-    const route = routeOrthogonal(last, g, ps.horizontalFirst);
+    const route = routeAvoiding(last, g, ps.horizontalFirst, pinPoints(sch()));
     const pts = [...ps.wire, ...route.slice(1)];
     if (finish || (pts.length >= 2 && isConnectionPoint(g) && !(g.x === ps.wire[0].x && g.y === ps.wire[0].y && ps.wire.length === 1))) finishWire(pts);
     else if (g.x !== last.x || g.y !== last.y) { ps.set({ wire: pts }); dirLocked.current = false; }
@@ -662,12 +662,12 @@ function Overlay({ schematic }: { schematic: Schematic }) {
   const mir = useEditor((s) => s.placeMirror);
   const ghostId = dropPart ?? (typeof tool === "object" ? tool.place : null);
   const ghost = ghostId ? getPart(ghostId) : undefined;
-  void schematic;
+  const pins = useMemo(() => (tool === "wire" ? pinPoints(schematic) : []), [tool, schematic]);
   return (
     <g className="overlay" aria-hidden="true">
       {tool === "wire" && wire.length > 0 && cursor && (() => {
         const last = wire[wire.length - 1];
-        const pts = [...wire, ...routeOrthogonal(last, cursor, hf).slice(1)];
+        const pts = [...wire, ...routeAvoiding(last, cursor, hf, pins).slice(1)];
         return <>
           <polyline points={wire.map((q) => `${q.x},${q.y}`).join(" ")} className="wire-draft" />
           <polyline points={pts.slice(wire.length - 1).map((q) => `${q.x},${q.y}`).join(" ")} className="wire-preview" />

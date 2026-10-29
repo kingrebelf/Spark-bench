@@ -4,7 +4,7 @@ import { computeConnectivity } from "../src/core/connectivity";
 import { createProject } from "../src/core/project";
 import {
   addWire, cleanupWires, copyItems, hitPin, hitTest, itemsInRect, mirrorItems, moveItems, nextRef, orthogonalize,
-  pasteClip, rotateItems, routeOrthogonal, rubberBand, simplifyPolyline, type Schematic,
+  pasteClip, rotateItems, routeAvoiding, routeOrthogonal, rubberBand, simplifyPolyline, type Schematic,
 } from "../src/editor/ops";
 import { keyOf } from "../src/core/geometry";
 import { Builder, divider } from "./helpers";
@@ -26,6 +26,11 @@ describe("routing and simplification", () => {
     expect(routeOrthogonal(P(0, 0), P(5, 3), true)).toEqual([P(0, 0), P(5, 0), P(5, 3)]);
     expect(routeOrthogonal(P(0, 0), P(5, 3), false)).toEqual([P(0, 0), P(0, 3), P(5, 3)]);
     expect(routeOrthogonal(P(0, 0), P(5, 0), false)).toEqual([P(0, 0), P(5, 0)]);
+  });
+  it("picks the other corner when the preferred one would cross a pin", () => {
+    const pin = P(10, 16);
+    expect(routeAvoiding(P(20, 16), P(5, 20), true, [pin])).toEqual([P(20, 16), P(20, 20), P(5, 20)]);
+    expect(routeAvoiding(P(20, 16), P(5, 20), true, [])).toEqual([P(20, 16), P(5, 16), P(5, 20)]);
   });
   it("drops duplicates and collinear interior points but keeps U-turns", () => {
     expect(simplifyPolyline([P(0, 0), P(0, 0), P(2, 0), P(5, 0), P(5, 3)])).toEqual([P(0, 0), P(5, 0), P(5, 3)]);

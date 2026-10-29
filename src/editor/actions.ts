@@ -57,6 +57,18 @@ export function rotateSelection(ccw = false) {
   apply(`Rotate ${describeItems(sch(), ids)}`, (s) => rotateItems(s, new Set(ids), ccw));
 }
 
+/** Set one part's rotation, rotating about its origin so attached wires follow. */
+export function rotateTo(id: string, target: Rotation) {
+  const c = sch().components.find((x) => x.id === id);
+  if (!c || c.rotation === target) return;
+  const steps = ((target - c.rotation) / 90 + 4) % 4;
+  apply(`Rotate ${c.ref} to ${target}°`, (s) => {
+    let out = s;
+    for (let i = 0; i < steps; i++) out = rotateItems(out, new Set([id]));
+    return out;
+  });
+}
+
 export function mirrorSelection() {
   const ids = liveSelection();
   if (!ids.length) return;
