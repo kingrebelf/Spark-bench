@@ -6,6 +6,7 @@ import { PropertiesPanel } from "../editor/PropertiesPanel";
 import { useEditor } from "../editor/store";
 import { SimPanel } from "../sim/SimPanel";
 import { AssistantPanel } from "../ai/AssistantPanel";
+import { KicadPanel } from "../kicad/KicadPanel";
 import { checkRecovery, newProject, openProject, saveProject, startRecoveryAutosave } from "./fileActions";
 import { useApp } from "./store";
 
@@ -13,6 +14,7 @@ import { useApp } from "./store";
 const RIGHT_PANELS: { id: string; label: string; render: () => React.ReactNode }[] = [
   { id: "properties", label: "Properties", render: () => <PropertiesPanel /> },
   { id: "assistant", label: "Assistant", render: () => <AssistantPanel /> },
+  { id: "kicad", label: "KiCad", render: () => <KicadPanel /> },
 ];
 
 export function App() {

@@ -1,0 +1,25 @@
+/* KiCad panel. Uses the app's theme variables (src/app/theme.css). */
+.kicad section { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 10px; }
+.kicad h3 { font-size: 13px; margin: 4px 0 6px; }
+.kicad h4 { font-size: 13px; margin: 10px 0 4px; }
+.kc-status { font-size: 13px; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); border-left: 3px solid var(--ok); display: flex; flex-direction: column; gap: 6px; }
+.kc-status.missing { border-left-color: var(--error); }
+.kc-check { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; margin: 6px 0; }
+.kc-rows { list-style: none; margin: 0; padding: 0; }
+.kc-row { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; padding: 4px; }
+.kc-row.kc-error { border-color: var(--error); } .kc-row.kc-warning { border-color: var(--warn); }
+.kc-row-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; width: 100%; text-align: left; background: none; border: none; padding: 2px; cursor: pointer; }
+.kc-map { flex-basis: 100%; font-family: var(--mono); font-size: 11px; color: var(--text-dim); overflow-wrap: anywhere; }
+.kc-dim { color: var(--text-dim); font-size: 12px; }
+.kc-editor { padding: 4px 2px; }
+.kc-editor code, .kc-path { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+.kc-hits { list-style: none; margin: 4px 0 0; padding: 0; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.kc-hit { display: block; width: 100%; text-align: left; background: none; border: none; padding: 4px 6px; cursor: pointer; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.kc-hit:hover, .kc-hit:focus-visible { background: var(--panel-2); }
+.kc-inline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.kc-result { margin-top: 8px; font-size: 13px; }
+.kc-result details { margin: 6px 0; }
+.kc-result summary { cursor: pointer; }
+.kc-list, .kc-viol { margin: 4px 0; padding-left: 16px; font-size: 12px; }
+.kc-viol { list-style: none; padding: 0; }
+.kc-pcb { margin-top: 6px; }
