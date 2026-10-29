@@ -4,6 +4,7 @@
 // button or potentiometer on the canvas, the change is recorded with the playback time and the WHOLE
 // transient is re-simulated from t = 0 with every recorded change (one exact ngspice run, nothing stitched).
 // Until that run returns, data after the earliest unapplied change is never shown.
+import { computeConnectivity } from "../core/connectivity";
 import { getPart } from "../core/library";
 import { formatSI, parseSI } from "../core/units";
 import type { ComponentDef, ComponentInstance, Project } from "../core/types";
@@ -100,46 +101,67 @@ export interface LivePlan {
   stop: number;
   step: number;
   rate: number;
-  /** How much circuit time each extension adds (≈20 s of playback). */
+  /** How much circuit time an extension adds (Run sessions; live sessions size it from the playback rate). */
   chunk: number;
-  /** Largest stop time the session may grow to (bounded by the number of output points). */
-  cap: number;
   reason: string;
 }
 
-const MAX_POINTS = 150_000;
+/**
+ * Slowest RC time constant: each capacitor with each resistor that touches one of its nets. A rough estimate
+ * for choosing a playback rate, not an analysis result.
+ */
+export function rcTimeConstant(project: Project, lookup = getPart): number | null {
+  const conn = computeConnectivity(project, lookup);
+  const netsOf = (id: string) => new Set(["1", "2"].map((p) => conn.pinNet.get(`${id}:${p}`)).filter((n): n is string => !!n && n !== "0"));
+  const val = (c: ComponentInstance) => parseSI((c.props.value ?? lookup(c.type)?.props.find((p) => p.key === "value")?.default) as string | number);
+  const comps = project.schematic.components;
+  const caps = comps.filter((c) => c.type === "capacitor" || c.type === "capacitor_polarized");
+  const res = comps.filter((c) => c.type === "resistor" || c.type === "potentiometer");
+  let best = 0;
+  for (const c of caps) {
+    const cn = netsOf(c.id), cv = val(c);
+    for (const r of res) {
+      const rv = val(r);
+      if ([...netsOf(r.id)].some((n) => cn.has(n)) && cv > 0 && rv > 0) best = Math.max(best, rv * cv);
+    }
+  }
+  return best > 0 ? best : null;
+}
 
 /**
- * Settings for a live session. With periodic sources the playback is slowed so one period of the slowest
- * source takes about a second; otherwise it runs in real time. The first run covers ~20 s of playback
- * and grows while you watch, up to a cap.
+ * Playback rate that makes the circuit's action visible: about two periods of the slowest source per second,
+ * else about half the slowest RC time constant per second; null when the circuit sets no time scale.
+ * Capped at 10 s per second.
+ */
+export function autoRate(project: Project, lookup = getPart): number | null {
+  const fs = sourceFrequencies(project, lookup);
+  if (fs.length) return Math.min(10, niceRate(2 / Math.min(...fs.map((f) => f.f))));
+  const tau = rcTimeConstant(project, lookup);
+  return tau ? Math.min(10, niceRate(2 * tau)) : null;
+}
+
+/**
+ * Settings for a live session: the automatic rate (real time when the circuit sets no time scale), a first run
+ * covering ~20 s of playback, and a max step fine enough for the sources but at most ~100k steps per 20 s.
  */
 export function livePlan(project: Project, lookup = getPart): LivePlan {
   const fs = sourceFrequencies(project, lookup);
   const userStep = parseSI(project.simulation.tran.step);
   const okStep = Number.isFinite(userStep) && userStep > 0 ? userStep : Infinity;
-  let rate: number, step: number, reason: string;
-  if (fs.length) {
-    const fmin = Math.min(...fs.map((f) => f.f)), fmax = Math.max(...fs.map((f) => f.f));
-    rate = Math.min(1, niceRate(1 / fmin));
-    step = Math.min(okStep, 1 / (fmax * 50));
-    reason = rate === 1 ? "real time" : `slowed so one period of the slowest source (${formatSI(fmin, "Hz")}) takes about a second`;
-  } else {
-    rate = 1;
-    step = Math.max(okStep === Infinity ? 1e-3 : okStep, 1e-3);
-    reason = "real time: no periodic sources set a faster time scale";
-  }
-  const chunk = 20 * rate;
-  step = Math.max(step, chunk / 100_000);
-  const cap = Math.max(chunk, Math.min(step * MAX_POINTS, 600 * rate));
-  return { stop: chunk, step, rate, chunk, cap, reason };
+  const auto = autoRate(project, lookup);
+  const rate = auto ?? 1;
+  let step = fs.length ? Math.min(okStep, 1 / (Math.max(...fs.map((f) => f.f)) * 50)) : Math.min(okStep, rate / 500);
+  step = Math.max(step, rate / 5000);
+  const reason = fs.length ? `about two periods of the slowest source (${formatSI(Math.min(...fs.map((f) => f.f)), "Hz")}) per second`
+    : auto ? "about half the slowest RC time constant per second" : "real time: the circuit sets no faster time scale";
+  return { stop: 20 * rate, step, rate, chunk: 20 * rate, reason };
 }
 
 /** Session settings for an ordinary transient Run (the project's own stop/step). */
 export function tranPlan(project: Project): LivePlan | null {
   const stop = parseSI(project.simulation.tran.stop), step = parseSI(project.simulation.tran.step);
   if (!(stop > 0) || !(step > 0)) return null;
-  return { stop, step, rate: defaultRate(stop), chunk: stop, cap: Math.max(stop, Math.min(step * MAX_POINTS, stop * 20)), reason: "the transient settings" };
+  return { stop, step, rate: defaultRate(stop), chunk: stop, reason: "the transient settings" };
 }
 
 /** Parts the user can operate during a run, and parts whose look follows the results. */

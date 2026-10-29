@@ -5,8 +5,9 @@ import { getPart } from "../core/library";
 import type { SpiceEngine } from "../core/simulate";
 import { useProject } from "../core/store";
 import type { AnalysisKind, Diagnostic, Project, SimResult } from "../core/types";
-import { defaultRate, edgeFor, livePlan, recordChange, toPwl, tranPlan, validUntil, staticValue, type Change, type LivePlan } from "./live";
+import { autoRate, defaultRate, edgeFor, livePlan, recordChange, toPwl, tranPlan, validUntil, staticValue, type Change, type LivePlan } from "./live";
 import { runSimulation } from "./run";
+import { detectFailure, type Damage } from "./stress";
 import { siText, validateSetup } from "./setup";
 import { workerEngine } from "./workerEngine";
 
@@ -32,8 +33,12 @@ export interface Session {
   /** Started with Live: real-time default, grows while playing. */
   live: boolean;
   plan: LivePlan;
-  /** Current stop time (grows up to plan.cap). */
+  /** Current stop time (live sessions grow it ahead of the playhead). */
   stop: number;
+  /** Parts that failed from over-stress (modeled as open circuits from the failure time). */
+  damage: Record<string, Damage[]>;
+  /** Wall time the last run took, to start the next extension early enough. */
+  computeMs?: number;
   /** Recorded changes per component id. */
   changes: Record<string, Change[]>;
   /** Change counter; `resultSeq` says which changes the shown result includes. */
@@ -66,8 +71,10 @@ interface SimState {
   change: (componentId: string, value: number, t?: number) => void;
   /** Drop all recorded changes and re-simulate with the parts' static settings. */
   clearChanges: () => void;
-  /** Simulate further: grow the session's stop time by one chunk (up to its cap) and re-run. */
+  /** Simulate further: grow the session's stop time by one chunk and re-run. */
   extend: () => void;
+  /** Replace every failed part at the playback time and re-simulate. */
+  repairAll: () => void;
   stop: () => void;
   reset: () => void;
   setContinuous: (on: boolean) => void;
@@ -82,9 +89,21 @@ let pendingLive = false;
 let engine: SpiceEngine & { stop?: () => void } = workerEngine;
 export const setSimEngine = (e: SpiceEngine & { stop?: () => void }) => { engine = e; };
 
-/** The project with the session's stop/step in place of the tran settings, and the PWL schedules. */
+/** Seconds of playback kept behind the playhead in live sessions (older samples are not saved). */
+export const HISTORY_SECONDS = 30;
+
+/** Wall-clock lead (in circuit seconds) at which a live session starts computing further ahead. */
+const leadTime = (s: Session, rate: number) => Math.max(5, 1.5 * (s.computeMs ?? 0) / 1000) * rate;
+
+/**
+ * The project with the session's stop/step in place of the tran settings, and the PWL schedules. Live sessions
+ * still simulate from 0 s but only save the last HISTORY_SECONDS of playback behind the playhead (bounded memory).
+ */
 function sessionInput(project: Project, s: Session) {
-  const p: Project = { ...project, simulation: { ...project.simulation, analysis: "tran", tran: { ...project.simulation.tran, stop: siText(s.stop), step: siText(s.plan.step) } } };
+  const pb = usePlayback.getState();
+  const start = s.live ? Math.max(0, Math.min(pb.t ?? 0, s.stop) - HISTORY_SECONDS * pb.rate) : 0;
+  const tran = { ...project.simulation.tran, stop: siText(s.stop), step: siText(s.plan.step), start: start > 0 ? siText(start) : undefined };
+  const p: Project = { ...project, simulation: { ...project.simulation, analysis: "tran", tran } };
   const schedules = new Map<string, [number, number][]>();
   const edge = edgeFor(s.plan.step);
   for (const c of project.schematic.components) {
@@ -99,6 +118,22 @@ export const useSim = create<SimState>((set, get) => {
   const basisOf = (project: Project, kind: AnalysisKind): ResultBasis =>
     ({ schematic: project.schematic, models: project.models, settings: settingsKey(project, kind), probeIds: project.simulation.probes.map((p) => p.id), project });
 
+  /**
+   * Look for a part that fails in this result (after the failures it already models). When one does, record it
+   * and return true: the caller re-simulates with the part open from that time.
+   */
+  let failChecks = 0;
+  function checkDamage(result: SimResult, project: Project): boolean {
+    const s = get().session;
+    if (!s || !result.ok || result.analysis !== "tran" || pendingLive) return false;
+    if (++failChecks > 40) return false; // a runaway chain of failures: stop modeling further ones
+    const f = detectFailure(project, result, s.damage);
+    if (!f) return false;
+    const seq = s.seq + 1;
+    set({ session: { ...s, seq, damage: { ...s.damage, [f.componentId]: [...(s.damage[f.componentId] ?? []), f.damage] }, log: [...s.log, { seq, t: f.t }] } });
+    return true;
+  }
+
   /** A fresh run: replaces whatever is shown, auto-plays transients from t = 0. */
   async function fresh(project: Project, kind: AnalysisKind, session: Session | null) {
     const problems = validateSetup(project, kind);
@@ -111,15 +146,20 @@ export const useSim = create<SimState>((set, get) => {
     if (get().status === "running" || get().rerunning) engine.stop?.(); // a newer run replaces the old one
     set({ status: "running", blocked: [], startedAt: Date.now(), session, rerunning: false, resultSeq: 0 });
     const inp = session ? sessionInput(project, session) : null;
-    const result = await runSimulation(inp?.p ?? project, engine, kind, inp ? { schedules: inp.schedules } : {});
+    const result = await runSimulation(inp?.p ?? project, engine, kind, inp ? { schedules: inp.schedules, damage: session!.damage } : {});
     if (my !== token) return; // superseded by Stop, Reset or a newer Run
     result.diagnostics = [...problems, ...result.diagnostics];
     usePlayback.getState().resetFor(result);
-    set({ status: result.ok ? "done" : "failed", result, startedAt: null, resultRevision: Date.now(), basis: basisOf(project, kind), resultSeq: session?.seq ?? 0 });
+    failChecks = 0;
+    set({ status: result.ok ? "done" : "failed", result, startedAt: null, resultRevision: Date.now(), basis: basisOf(project, kind), resultSeq: session?.seq ?? 0,
+      session: session ? { ...session, computeMs: result.elapsedMs } : null });
     if (result.ok && kind === "tran") {
       const pb = usePlayback.getState();
-      pb.setRate(session?.live ? session.plan.rate : defaultRate(pb.t1 - pb.t0));
+      const auto = autoRate(project);
+      const span = defaultRate(pb.t1 - pb.t0);
+      pb.setRate(session?.live ? session.plan.rate : auto != null ? Math.min(auto, span) : span);
       pb.play();
+      if (checkDamage(result, project)) void rerun();
     }
     if (pendingRerun) { pendingRerun = false; scheduleContinuous(); }
   }
@@ -134,7 +174,7 @@ export const useSim = create<SimState>((set, get) => {
     const seq = s.seq;
     set({ rerunning: true });
     const inp = sessionInput(project, s);
-    const result = await runSimulation(inp.p, engine, "tran", { schedules: inp.schedules });
+    const result = await runSimulation(inp.p, engine, "tran", { schedules: inp.schedules, damage: s.damage });
     if (my !== token) return;
     set({ rerunning: false });
     if (!result.ok) {
@@ -145,22 +185,33 @@ export const useSim = create<SimState>((set, get) => {
       return;
     }
     usePlayback.getState().adopt(result);
-    set({ result, resultRevision: Date.now(), resultSeq: seq });
+    const cur = get().session;
+    set({ result, resultRevision: Date.now(), resultSeq: seq, session: cur ? { ...cur, computeMs: result.elapsedMs } : cur });
     if (pendingLive) { pendingLive = false; void rerun(); }
+    else if (checkDamage(result, project)) void rerun();
   }
 
-  /** Grow the session's stop time (live sessions near the end, or a change made at the end). */
+  /** Grow the session's stop time (live sessions ahead of the playhead, or a change made at the end). */
   function extendTo(t: number): boolean {
     const s = get().session;
     if (!s) return false;
-    if (s.stop >= s.plan.cap - 1e-12) {
-      if (!s.note) set({ session: { ...s, note: `Reached the ${siText(s.plan.cap)}s limit of this session (bounded so re-simulating from 0 s stays fast). Press Live or Run to start over.` } });
-      return false;
-    }
-    const stop = Math.min(s.plan.cap, Math.max(s.stop + s.plan.chunk, t + s.plan.chunk));
+    const rate = usePlayback.getState().rate;
+    // Live: at least 20 s of playback per extension (more when runs get slow), at most 100k output steps.
+    const chunk = s.live ? Math.min(Math.max(20 * rate, 2 * leadTime(s, rate)), s.plan.step * 100_000) : s.plan.chunk;
+    const stop = Math.max(s.stop + chunk, t + chunk);
     set({ session: { ...s, stop } });
     return true;
   }
+
+  /** Recorded failures and repairs after time t were computed from a future that a change just replaced. */
+  const pruneDamage = (damage: Record<string, Damage[]>, t: number): Record<string, Damage[]> => {
+    const out: Record<string, Damage[]> = {};
+    for (const [id, list] of Object.entries(damage)) {
+      const kept = list.filter((d) => d.t <= t).map((d) => (d.repairedAt != null && d.repairedAt > t ? { ...d, repairedAt: undefined } : d));
+      if (kept.length) out[id] = kept;
+    }
+    return out;
+  };
 
   return {
     status: "idle",
@@ -177,14 +228,14 @@ export const useSim = create<SimState>((set, get) => {
       const project = useProject.getState().project;
       const kind = analysis ?? project.simulation.analysis;
       const plan = kind === "tran" ? tranPlan(project) : null;
-      await fresh(project, kind, plan ? { live: false, plan, stop: plan.stop, changes: {}, seq: 0, log: [] } : null);
+      await fresh(project, kind, plan ? { live: false, plan, stop: plan.stop, changes: {}, damage: {}, seq: 0, log: [] } : null);
     },
     startLive: async () => {
       const st = useProject.getState();
       if (st.project.simulation.analysis !== "tran") st.update("Simulation settings", (d) => { d.simulation.analysis = "tran"; }, { merge: true });
       const project = useProject.getState().project;
       const plan = livePlan(project);
-      await fresh(project, "tran", { live: true, plan, stop: plan.stop, changes: {}, seq: 0, log: [] });
+      await fresh(project, "tran", { live: true, plan, stop: plan.stop, changes: {}, damage: {}, seq: 0, log: [] });
     },
     change: (componentId, value, at) => {
       const s = get().session, r = get().result;
@@ -192,10 +243,23 @@ export const useSim = create<SimState>((set, get) => {
       const pb = usePlayback.getState();
       const t = Math.max(0, at ?? pb.t ?? pb.t1);
       const seq = s.seq + 1;
-      const next: Session = { ...s, seq, changes: { ...s.changes, [componentId]: recordChange(s.changes[componentId], t, value) }, log: [...s.log, { seq, t }] };
+      const next: Session = { ...s, seq, changes: { ...s.changes, [componentId]: recordChange(s.changes[componentId], t, value) }, damage: pruneDamage(s.damage, t), log: [...s.log, { seq, t }] };
       set({ session: next });
+      failChecks = 0;
       // A change at (or past) the end needs simulated time after it.
-      if (t > pb.t1 - next.plan.chunk * 0.05) extendTo(t);
+      if (t > pb.t1 - (next.live ? leadTime(next, pb.rate) : next.plan.chunk * 0.05)) extendTo(t);
+      void rerun();
+    },
+    repairAll: () => {
+      const s = get().session;
+      if (!s || !Object.keys(s.damage).length) return;
+      const pb = usePlayback.getState();
+      const t = pb.t ?? pb.t1;
+      const damage: Record<string, Damage[]> = {};
+      for (const [id, list] of Object.entries(pruneDamage(s.damage, t))) damage[id] = list.map((d) => (d.repairedAt == null ? { ...d, repairedAt: t } : d));
+      const seq = s.seq + 1;
+      set({ session: { ...s, seq, damage, log: [...s.log, { seq, t }] } });
+      failChecks = 0;
       void rerun();
     },
     extend: () => { if (extendTo(usePlayback.getState().t1)) void rerun(); },
@@ -203,7 +267,8 @@ export const useSim = create<SimState>((set, get) => {
       const s = get().session;
       if (!s) return;
       const seq = s.seq + 1;
-      set({ session: { ...s, seq, changes: {}, log: [...s.log, { seq, t: 0 }] } });
+      set({ session: { ...s, seq, changes: {}, damage: {}, log: [...s.log, { seq, t: 0 }] } });
+      failChecks = 0;
       void rerun();
     },
     stop: () => {
@@ -233,8 +298,8 @@ export const useValidUntil = () => useSim((s) => (s.session ? validUntil(s.sessi
 function maybeExtend(t: number, t1: number, rate: number) {
   const sim = useSim.getState();
   const s = sim.session;
-  if (!s?.live || sim.rerunning || !sim.result?.ok || s.note || s.stop > t1 + 1e-12) return;
-  if (t1 - t <= 5 * rate) sim.extend();
+  if (!s?.live || sim.rerunning || !sim.result?.ok || s.stop > t1 + 1e-12) return;
+  if (t1 - t <= leadTime(s, rate)) sim.extend();
 }
 
 // ---------------------------------------------------------------- staleness
@@ -354,7 +419,7 @@ export const usePlayback = create<PlaybackState>((set, get) => {
       const x = r.x?.real;
       if (!x?.length) return;
       const t1 = x[x.length - 1];
-      set((s) => ({ t0: x[0], t1, t: s.t == null ? null : Math.min(t1, s.t) }));
+      set((s) => ({ t0: x[0], t1, t: s.t == null ? null : Math.min(t1, Math.max(x[0], s.t)) }));
     },
   };
 });

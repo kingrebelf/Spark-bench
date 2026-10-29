@@ -2,6 +2,7 @@
 // push button drawn in their state at the playback time, potentiometer wiper position. Rendered in grid
 // units inside the canvas's zoomed group (via SimCanvasOverlay). Grab areas of interactive parts get a
 // pointer cursor; the canvas routes the actual presses to `liveInput`.
+import { useMemo } from "react";
 import { getPart } from "../core/library";
 import { useProject } from "../core/store";
 import { parseSI, formatSI } from "../core/units";
@@ -9,7 +10,8 @@ import type { ComponentDef, ComponentInstance, SimResult } from "../core/types";
 import { interpolate } from "../scope/measure";
 import { displayLimit } from "./live";
 import { grabBox, liveEnabled, liveValue, wiperY } from "./interact";
-import { usePlayback, useSim, useStaleness, useValidUntil } from "./store";
+import { usePlayback, useRunProject, useSim, useStaleness, useValidUntil } from "./store";
+import { failedAt, stressTracks, WARN_FRACTION } from "./stress";
 
 const LED_RGB: Record<string, string> = {
   red: "#ff3b30", orange: "#ff9500", yellow: "#ffd60a", green: "#30d158", "green (old GaP)": "#8fd14f",
@@ -41,10 +43,11 @@ export function LiveParts() {
 
   const parts: { c: ComponentInstance; def: ComponentDef }[] = [];
   for (const c of comps) { const def = getPart(c.type); if (def?.interactive || def?.indicator) parts.push({ c, def: def! }); }
-  if (!parts.length) return null;
+  if (!parts.length) return <StressMarks />;
 
   return (
     <g className="live-parts">
+      <StressMarks />
       <defs>
         {Object.entries(LED_RGB).map(([k, col]) => (
           <radialGradient key={k} id={`sb-glow-${k.replace(/\W/g, "")}`}>
@@ -105,6 +108,64 @@ export function LiveParts() {
               </rect>
             )}
           </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
+ * Over-stress on the schematic at the playback time: an amber-to-red glow as a part's averaged stress nears its
+ * rating, then (transient only) a short flash and smoke puff when it fails, and a charred mark while it is open.
+ */
+function StressMarks() {
+  const result = useSim((s) => s.result);
+  const damage = useSim((s) => s.session?.damage);
+  const runProject = useRunProject();
+  const comps = useProject((s) => s.project.schematic.components);
+  const t = usePlayback((s) => s.t);
+  const rate = usePlayback((s) => s.rate);
+  const valid = useValidUntil();
+  const tracks = useMemo(() => (result?.ok ? stressTracks(runProject, result, damage ?? {}) : []), [runProject, result, damage]);
+  if (!tracks.length && !damage) return null;
+  const x = result?.analysis === "tran" ? result.x?.real : undefined;
+  const tShow = x ? displayLimit(t, valid) ?? x[x.length - 1] : 0;
+  const worst = new Map<string, { ratio: number; ref: string; kind: string }>();
+  for (const tr of tracks) {
+    const r = x ? interpolate(x, tr.ratio, tShow) : tr.ratio[0];
+    const w = worst.get(tr.componentId);
+    if (!w || r > w.ratio) worst.set(tr.componentId, { ratio: r, ref: tr.ref, kind: tr.kind });
+  }
+  return (
+    <g className="stress-marks">
+      {comps.map((c) => {
+        const failed = x ? failedAt(damage?.[c.id], tShow) : undefined;
+        const w = worst.get(c.id);
+        const { x: cx, y: cy } = c.position;
+        if (failed) {
+          const p = (tShow - failed.t) / Math.max(rate, 1e-12); // seconds of playback since the failure
+          return (
+            <g key={c.id}>
+              {p < 0.35 && <circle cx={cx} cy={cy} r={1.5 + 4 * p} fill="#ffb300" opacity={0.8 * (1 - p / 0.35)} pointerEvents="none" />}
+              {p < 2.5 && [0, 1, 2].map((i) => {
+                const q = Math.max(0, p - i * 0.25);
+                return <circle key={i} cx={cx + (i - 1) * 0.6 + q * 0.4} cy={cy - 1 - q * 2.6} r={0.6 + q * 0.7} fill="#9e9e9e" opacity={Math.max(0, 0.55 * (1 - q / 2.2))} pointerEvents="none" />;
+              })}
+              <circle cx={cx} cy={cy} r={1.5} fill="#2b2118" opacity={0.75} stroke="#ff5722" strokeWidth={0.12} pointerEvents="all">
+                <title>{failed.message}</title>
+              </circle>
+              <text x={cx} y={cy} fontSize={1.4} textAnchor="middle" dominantBaseline="central" fill="#ff7043" pointerEvents="none">✕</text>
+            </g>
+          );
+        }
+        if (!w || w.ratio < WARN_FRACTION) return null;
+        const k = Math.min(1, (w.ratio - WARN_FRACTION) / (1 - WARN_FRACTION));
+        const over = w.ratio >= 1;
+        return (
+          <circle key={c.id} cx={cx} cy={cy} r={2.2 + 0.6 * k} fill="none" stroke={over ? "#ff3d00" : "#ffa000"} strokeWidth={0.25 + 0.35 * k}
+            opacity={0.35 + 0.55 * k} strokeDasharray={over ? undefined : "0.6 0.4"} pointerEvents="all">
+            <title>{`${w.ref}: ${Math.round(w.ratio * 100)} % of its ${w.kind === "reverse-voltage" ? "reverse-voltage limit" : `${w.kind} rating`}${x ? " (averaged)" : ""}.${over && x ? " It fails when the average stays above 100 %." : ""}`}</title>
+          </circle>
         );
       })}
     </g>

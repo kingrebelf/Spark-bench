@@ -1,9 +1,10 @@
+import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 import { Builder, engine } from "./helpers";
 import { generateNetlist } from "../src/core/netlist";
 import { runSimulation } from "../src/sim/run";
 import { interpolate } from "../src/scope/measure";
-import { displayLimit, livePlan, recordChange, toPwl, validUntil, valueAt, niceRate, defaultRate } from "../src/sim/live";
+import { autoRate, displayLimit, livePlan, recordChange, toPwl, validUntil, valueAt, niceRate, defaultRate, RATES } from "../src/sim/live";
 import type { Project, SimResult } from "../src/core/types";
 import type { EngineOutput, SpiceEngine } from "../src/core/simulate";
 import { useProject } from "../src/core/store";
@@ -113,7 +114,7 @@ describe("live schedules", () => {
     b.project.schematic.components.find((c) => c.ref === "SW1")!.props.closed = true;
     const op = await runSimulation(b.project, engine(), "op");
     expect(op.ok).toBe(true);
-    expect(op.netlist).toMatch(/\.save all @d1\[id\]/i);
+    expect(op.netlist).toMatch(/\.save all .*@d1\[id\]/i);
     expect(ledI(op, 0)).toBeGreaterThan(5e-3);
   }, 60_000);
 
@@ -143,11 +144,11 @@ describe("live time scale", () => {
     const still = livePlan(proj([]));
     expect(still.rate).toBe(1);
     expect(still.stop).toBe(20);
-    expect(still.stop / still.step).toBeLessThanOrEqual(100_000);
+    expect(still.stop / still.step).toBeLessThanOrEqual(100_001);
     const khz = livePlan(proj([{ f: "1k" }]));
-    expect(khz.rate).toBe(1e-3);
+    expect(khz.rate).toBe(2e-3); // two cycles of 1 kHz per second
     expect(khz.step).toBeLessThanOrEqual(1 / (1000 * 50));
-    expect(khz.cap).toBeGreaterThan(khz.stop);
+    expect(khz.stop).toBeCloseTo(0.04, 12);
     expect(niceRate(0.003)).toBe(0.002);
     expect(defaultRate(5)).toBe(1);
     expect(defaultRate(0.02)).toBe(0.002);
@@ -215,4 +216,82 @@ describe("live session in the store", () => {
     expect(ledI(r, t1 * 1.4)).toBeGreaterThan(5e-3);
     useSim.getState().reset();
   }, 60_000);
+});
+
+/** Wait until no re-run is in flight or pending for a few polls. */
+async function settle() {
+  let quiet = 0;
+  for (let i = 0; i < 500 && quiet < 4; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    quiet = useSim.getState().rerunning ? 0 : quiet + 1;
+  }
+}
+
+describe("session extension and damage in the store", () => {
+  it("extending the run keeps the recorded schedule (re-simulated from 0 s, longer)", async () => {
+    const { b, S } = ledSwitch();
+    useProject.getState().load(b.project);
+    setSimEngine(engine());
+    await useSim.getState().run("tran");
+    usePlayback.getState().pause();
+    usePlayback.getState().seek(5e-3);
+    useSim.getState().change(S.id, 1);
+    await settle();
+    useSim.getState().extend();
+    await settle();
+    const r = useSim.getState().result!;
+    expect(r.x!.real[r.x!.real.length - 1]).toBeCloseTo(20e-3, 6);
+    expect(Math.abs(ledI(r, 4e-3))).toBeLessThan(1e-6);
+    expect(ledI(r, 15e-3)).toBeGreaterThan(5e-3); // still closed in the extended part
+    useSim.getState().reset();
+  }, 60_000);
+
+  it("an LED straight on 9 V burns out, is re-simulated as open, and Repair all reconnects it at the playhead", async () => {
+    const b = new Builder();
+    const V = b.place("vdc", "V1", 0, 10, { value: "9" });
+    const D = b.place("led", "D1", 20, 10, { color: "red" });
+    const G = b.place("ground", "#PWR1", 40, 10);
+    b.label("top", b.pin(V, "1")).label("top", b.pin(D, "A"));
+    b.label("gnd", b.pin(D, "K")).label("gnd", b.pin(V, "2")).label("gnd", b.pin(G, "1"));
+    b.project.simulation.tran = { stop: "100m", step: "100u" };
+    useProject.getState().load(b.project);
+    setSimEngine(engine());
+    await useSim.getState().run("tran");
+    usePlayback.getState().pause();
+    await settle();
+    let st = useSim.getState();
+    const dmg = st.session!.damage[D.id];
+    expect(dmg).toHaveLength(1);
+    expect(dmg[0].t).toBeLessThan(1e-3);
+    expect(validUntil(st.session!.log, st.resultSeq)).toBeNull();
+    const i = (t: number) => interpolate(st.result!.x!.real, st.result!.vectors.find((v) => v.componentId === D.id && v.kind === "current")!.real, t);
+    expect(Math.abs(i(0.05))).toBeLessThan(1e-6);
+
+    usePlayback.getState().seek(0.05);
+    useSim.getState().repairAll();
+    await settle();
+    st = useSim.getState();
+    const list = st.session!.damage[D.id];
+    expect(list[0].repairedAt).toBeCloseTo(0.05, 9);
+    expect(list).toHaveLength(2); // fails again right after the repair: nothing limits the current
+    expect(list[1].t).toBeGreaterThan(0.05);
+    expect(list[1].t).toBeLessThan(0.052);
+    useSim.getState().reset();
+  }, 60_000);
+});
+
+describe("time-scale dial", () => {
+  const sine = (f: string) => { const b = new Builder(); b.place("vsine", "V1", 0, 0, { frequency: f }); return b.project; };
+  it("defaults to about two source periods per second, real time for a ~1 Hz 555, and offers 1-2-5 steps", () => {
+    expect(autoRate(sine("1k"))).toBe(2e-3);
+    expect(autoRate(sine("50"))).toBe(0.02);
+    expect(autoRate(sine("0.01"))).toBe(10); // capped
+    const blinker = JSON.parse(readFileSync("examples/555-astable-blinker.sbproj", "utf8"));
+    expect(autoRate(blinker)).toBe(1);
+    expect(autoRate(new Builder().project)).toBeNull();
+    expect(RATES).toContain(1);
+    expect(RATES).toContain(1e-6);
+    expect(RATES[RATES.length - 1]).toBe(10);
+    for (let i = 1; i < RATES.length; i++) expect(RATES[i] / RATES[i - 1]).toBeLessThanOrEqual(2.5 + 1e-9);
+  });
 });

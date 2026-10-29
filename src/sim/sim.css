@@ -59,3 +59,12 @@
 .playback-notes { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; margin: -2px 0 4px; }
 .playback-notes .live-note { color: var(--accent); }
 .sim-side + .sim-results, .sim-results:only-child { flex: 1; }
+/* Time-scale dial, scope row, damage */
+.dial { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 8px; margin: 2px 0 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); }
+.dial-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); font-weight: 600; }
+.dial input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--accent); }
+.dial-value { font-size: 16px; font-weight: 600; min-width: 92px; }
+.sim2 .btn.on { border-color: var(--accent); color: var(--accent); }
+.scope-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
+.damage { border: 1px solid var(--error); border-radius: 6px; padding: 4px 8px; margin: 2px 0 6px; }
+.damage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }

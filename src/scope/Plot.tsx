@@ -43,6 +43,8 @@ interface Props {
   follow?: number | null;
   /** Zoom and cursors reset when this changes (default: when the x data changes). Live re-runs keep them. */
   resetKey?: unknown;
+  /** Fixed x grid spacing (scope divisions); default: nice ticks. */
+  xDiv?: number;
   onSeek?: (x: number) => void;
   /** Show the min/max/avg/RMS/pk-pk/frequency table (time-domain plots). */
   measurements?: boolean;
@@ -63,7 +65,7 @@ function cssVar(el: Element, name: string, fallback: string) {
   return getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 }
 
-export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, pendingFrom, follow, resetKey, onSeek, measurements, height, handle }: Props) {
+export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, pendingFrom, follow, resetKey, xDiv, onSeek, measurements, height, handle }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
@@ -99,11 +101,8 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
   }, [series, xLog]);
   const followRange = useMemo<Range | null>(() => {
     if (view.x || follow == null || playhead == null || xLog || extent[1] - extent[0] <= follow) return null;
-    // Page like a scope in roll mode: the window jumps forward when the playhead nears its right edge.
-    const page = follow * 0.75;
-    const rel = playhead - extent[0];
-    const k = rel <= follow * 0.9 ? 0 : Math.floor((rel - follow * 0.9) / page) + 1;
-    const lo = Math.min(extent[1] - follow, extent[0] + k * page);
+    // Scroll continuously like a scope in roll mode: the playhead stays at 90 % of the width.
+    const lo = Math.min(extent[1] - follow, Math.max(extent[0], playhead - follow * 0.9));
     return [lo, lo + follow];
   }, [view.x, follow, playhead, xLog, extent]);
   const xr: Range = view.x ?? followRange ?? extent;
@@ -160,7 +159,8 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
     ctx.font = "11px " + cssVar(el, "--mono", "monospace");
     ctx.lineWidth = 1;
     // x ticks
-    const xt = xLog ? logTicks(xr[0], xr[1]) : niceTicks(xr[0], xr[1], Math.max(2, Math.floor(plotW / 90))).map((value) => ({ value, major: true }));
+    const xt = xLog ? logTicks(xr[0], xr[1]) : xDiv && (xr[1] - xr[0]) / xDiv <= 40 ? divTicks(xr, xDiv, plotW)
+      : niceTicks(xr[0], xr[1], Math.max(2, Math.floor(plotW / 90))).map((value) => ({ value, major: true }));
     panes.forEach((spec, p) => {
       const top = paneTop(p);
       ctx.strokeStyle = grid;
@@ -187,7 +187,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
     // x labels under the last pane
     const bottom = paneTop(panes.length - 1) + paneH;
     ctx.fillStyle = dim; ctx.textAlign = "center"; ctx.textBaseline = "top";
-    for (const t of xt) if (t.major || xt.length < 12) ctx.fillText(tickLabel(t.value, xUnit), xToPx(t.value), bottom + 4);
+    for (const t of xt) if (t.major || (xt.length < 12 && !xDiv)) ctx.fillText(tickLabel(t.value, xUnit), xToPx(t.value), bottom + 4);
     ctx.fillStyle = text; ctx.textAlign = "right"; ctx.fillText(xLabel, M.left + plotW, bottom + 16);
 
     // traces, clipped per pane
@@ -223,7 +223,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
         ctx.restore();
       }
     }
-  }, [width, height, panes, xr, xLog, plotW, paneH, yRanges, decimated, xToPx, xUnit, xLabel, playhead, lim, pendingFrom]);
+  }, [width, height, panes, xr, xLog, plotW, paneH, yRanges, decimated, xToPx, xUnit, xLabel, playhead, lim, pendingFrom, xDiv]);
 
   const drawOverlay = useCallback((ctx: CanvasRenderingContext2D) => {
     const el = overRef.current!;
@@ -454,3 +454,12 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
 }
 
 const fmtX = (v: number, unit: string) => formatSI(v, unit, 4);
+
+/** Grid lines every `div` (scope divisions); labels on every line when there is room, else every other one. */
+function divTicks(xr: [number, number], div: number, plotW: number): { value: number; major: boolean }[] {
+  const out: { value: number; major: boolean }[] = [];
+  const n = (xr[1] - xr[0]) / div;
+  const every = plotW / n >= 70 ? 1 : 2;
+  for (let k = Math.ceil(xr[0] / div - 1e-9); k * div <= xr[1] + 1e-12; k++) out.push({ value: Number((k * div).toPrecision(12)), major: k % every === 0 });
+  return out;
+}

@@ -13,9 +13,10 @@ import { interpolate } from "../scope/measure";
 import { Plot, type PaneSpec, type PlotHandle, type PlotSeries } from "../scope/Plot";
 import { resultToCsv, safeFileName, saveText, savePng } from "./exporting";
 import { addSaves, planCurrentSaves, PROBE_COLORS } from "./probes";
-import { displayLimit, hasLiveParts, RATES, rateLabel } from "./live";
+import { autoRate, defaultRate, displayLimit, hasLiveParts, RATES } from "./live";
 import { acSources, sourceFrequencies, suggestAc, suggestTran, validateSetup } from "./setup";
-import { usePlayback, useRunProject, useSim, useStaleness, useValidUntil } from "./store";
+import { HISTORY_SECONDS, usePlayback, useRunProject, useSim, useStaleness, useValidUntil } from "./store";
+import { damageText, stressTracks } from "./stress";
 import { allTraces, magDb, phaseDeg, probeTraces, type Trace } from "./traces";
 import "./sim.css";
 
@@ -363,6 +364,7 @@ function ResultArea({ result, status, blocked, traces, missing, showAll, setShow
       {result.ok && probesExist && (
         <label className="chk small"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Show all signals instead of probes</label>
       )}
+      {result.ok && result.analysis === "op" && <OpStress result={result} />}
       {result.ok && result.analysis === "op" && <OpTable traces={traces} />}
       {result.ok && result.analysis !== "op" && traces.length === 0 && <div className="sim-msg">The run produced no plottable signals for the selected probes.</div>}
       {result.ok && result.analysis === "tran" && traces.length > 0 && <TranView result={result} traces={traces} plotRef={plotRef} height={plotH} />}
@@ -426,13 +428,16 @@ function OpTable({ traces }: { traces: Trace[] }) {
   );
 }
 
+/** Scope divisions across the plot width in playback. */
+const DIVS = 10;
+
 function TranView({ result, traces, plotRef, height }: { result: SimResult; traces: Trace[]; plotRef: React.RefObject<PlotHandle | null>; height: number }) {
   const t = usePlayback((s) => s.t);
   const seek = usePlayback((s) => s.seek);
   const rate = usePlayback((s) => s.rate);
   const valid = useValidUntil();
-  const live = useSim((s) => !!s.session?.live);
   const basis = useSim((s) => s.basis); // replaced only by a fresh Run/Live, not by live re-runs
+  const [div, setDiv] = useState<number | "auto">("auto");
   const x = result.x!.real;
   const t1 = usePlayback((s) => s.t1);
   useEffect(() => { if (t1 !== x[x.length - 1]) usePlayback.getState().adopt(result); }, [result, x, t1]);
@@ -441,26 +446,73 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
   })), [traces, x]);
   const hasV = series.some((s) => s.axis === "left"), hasA = series.some((s) => s.axis === "right");
   const panes: PaneSpec[] = [{ left: hasV ? { unit: "V", label: "Voltage (V)" } : undefined, right: hasA ? { unit: "A", label: "Current (A)" } : undefined }];
+  // Auto: one division per second of playback, so the trace crosses the screen in 10 s at any time scale.
+  const perDiv = div === "auto" ? rate : div;
   return (
     <>
       <PlaybackBar />
+      <div className="scope-row">
+        <label className="fld" title="Horizontal scale of the scope while playing. Auto ties it to the time scale: 1 division = 1 second of playback.">
+          <span>Time/div</span>
+          <select value={String(div)} onChange={(e) => setDiv(e.target.value === "auto" ? "auto" : Number(e.target.value))} aria-label="Time per division">
+            <option value="auto">Auto ({formatSI(rate, "s", 3)})</option>
+            {RATES.map((r) => <option key={r} value={r}>{formatSI(r, "s", 3)}</option>)}
+          </select>
+        </label>
+        <span className="dim small">{t != null ? `Scrolling: ${DIVS} divisions = ${formatSI(DIVS * perDiv, "s", 3)} on screen` : "Showing the whole run (playback off)"}</span>
+      </div>
       <Plot handle={plotRef} series={series} panes={panes} xUnit="s" xLabel="time" playhead={t} onSeek={(v) => seek(v)} measurements height={height}
-        hideAfter={displayLimit(t, valid)} pendingFrom={valid} follow={live ? 10 * rate : null} resetKey={basis} />
+        hideAfter={displayLimit(t, valid)} pendingFrom={valid} follow={t != null ? DIVS * perDiv : null} xDiv={t != null ? perDiv : undefined} resetKey={basis} />
     </>
   );
 }
 
+/** Index of a rate on the dial (RATES), nearest preset. */
+const rateIndex = (r: number) => RATES.reduce((best, v, i) => (Math.abs(Math.log(v / r)) < Math.abs(Math.log(RATES[best] / r)) ? i : best), 0);
+
+function TimeDial() {
+  const rate = usePlayback((s) => s.rate);
+  const setRate = usePlayback((s) => s.setRate);
+  const t0 = usePlayback((s) => s.t0), t1 = usePlayback((s) => s.t1);
+  const session = useSim((s) => s.session);
+  const project = useRunProject();
+  const auto = useMemo(() => {
+    if (session?.live) return session.plan.rate;
+    const a = autoRate(project), span = defaultRate(t1 - t0);
+    return a != null ? Math.min(a, span) : span;
+  }, [session, project, t0, t1]);
+  const idx = rateIndex(rate), realIdx = RATES.indexOf(1);
+  const factor = rate === 1 ? "real time" : rate < 1 ? `${Number((1 / rate).toPrecision(3)).toLocaleString()}× slower than real` : `${Number(rate.toPrecision(3))}× faster than real`;
+  return (
+    <div className="dial" role="group" aria-label="Time scale">
+      <span className="dial-title" title="How much circuit time passes per second of playback. Changing it never changes the simulation, only how fast you watch it.">Time scale</span>
+      <input type="range" min={0} max={RATES.length - 1} step={1} value={idx} list="sb-rate-ticks" aria-label="Circuit time per second"
+        aria-valuetext={`${formatSI(rate, "s", 3)} per second`} onChange={(e) => setRate(RATES[Number(e.target.value)])} />
+      <datalist id="sb-rate-ticks">{RATES.map((r, i) => (Math.log10(r) % 1 === 0 ? <option key={r} value={i} /> : null))}</datalist>
+      <span className="dial-value mono">{formatSI(rate, "s", 3)}<span className="dim"> / s</span></span>
+      <span className="dim small">{factor}</span>
+      <button className={`btn sm${rate === 1 ? " on" : ""}`} onClick={() => setRate(RATES[realIdx])} title="1 s of circuit time per second">Real time</button>
+      <button className={`btn sm${rate === auto ? " on" : ""}`} onClick={() => setRate(auto)} title="Chosen from the source frequencies or RC time constants so the action is visible">Auto ({formatSI(auto, "s", 3)}/s)</button>
+    </div>
+  );
+}
+
 function PlaybackBar() {
-  const { t, playing, rate, t0, t1, waiting, play, pause, seek, setRate, exit } = usePlayback();
+  const { t, playing, t0, t1, waiting, play, pause, seek, exit } = usePlayback();
   const session = useSim((s) => s.session);
   const rerunning = useSim((s) => s.rerunning);
-  const { clearChanges, extend } = useSim.getState();
+  const { clearChanges, extend, repairAll } = useSim.getState();
   const operable = useProject((s) => s.project.schematic.components.some((c) => getPart(c.type)?.interactive));
   const stale = useStaleness();
   const span = t1 - t0;
   const pos = t ?? t1;
   const nChanges = session ? Object.values(session.changes).reduce((n, c) => n + c.length, 0) : 0;
-  const rates = RATES.includes(rate) ? RATES : [...RATES, rate].sort((a, b) => a - b);
+  // Failures that have happened by the playback time.
+  const damage: Diagnostic[] = [];
+  for (const [id, list] of Object.entries(session?.damage ?? {})) {
+    for (const d of list) if (d.t <= pos) damage.push({ severity: "warning", code: "part-damaged", source: "check", componentIds: [id], message: d.repairedAt != null && d.repairedAt <= pos ? `${d.message} (repaired at ${formatSI(d.repairedAt, "s", 4)})` : d.message, fix: d.fix });
+  }
+  const broken = Object.values(session?.damage ?? {}).some((l) => l.some((d) => d.repairedAt == null && d.t <= pos));
   return (
     <div className="playback-wrap">
       <div className="playback" aria-label="Playback of the computed result">
@@ -469,31 +521,48 @@ function PlaybackBar() {
         <input type="range" min={0} max={1000} value={span > 0 ? Math.round((pos - t0) / span * 1000) : 0} aria-label="Playback position"
           onChange={(e) => seek(t0 + Number(e.target.value) / 1000 * span)} />
         <span className="mono small">{formatSI(pos, "s", 4)} / {formatSI(t1, "s", 4)}</span>
-        <label className="fld" title="How fast the computed result is replayed. It never changes the simulation."><span>Playback</span>
-          <select value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="Playback rate">
-            {rates.map((r) => <option key={r} value={r}>{rateLabel(r)}</option>)}
-          </select>
-        </label>
         {t != null && <button className="btn sm" onClick={exit} title="Show the end-of-run values">Exit playback</button>}
-        {session && !session.live && !session.note && t != null && t >= t1 && <button className="btn sm" onClick={extend} title="Re-simulate from 0 s with a longer stop time (your changes included)">Simulate further</button>}
+        {session && !session.live && t != null && t >= t1 && <button className="btn sm" onClick={extend} title="Re-simulate from 0 s with a longer stop time (your changes included)">Simulate further</button>}
       </div>
+      <TimeDial />
       <div className="playback-notes small">
-        <span className="dim" title="ngspice computes a run before it is shown; playback only replays it.">
-          Playback of a finished ngspice run{rate === 1 ? ", in real time" : `: ${rateLabel(rate)}`}.
-        </span>
+        {session?.live
+          ? <span className="dim" title="Every extension re-simulates the whole run from 0 s with your changes; only the recent part is kept for display.">
+              Live: ngspice computes ahead of the playhead and keeps going until you pause. The last {HISTORY_SECONDS} s of playback are kept for the scope.
+            </span>
+          : <span className="dim" title="ngspice computes a run before it is shown; playback only replays it.">Playback of a finished ngspice run.</span>}
         {session && operable && !stale.any && nChanges === 0 && <span>Click switches and buttons, drag potentiometers on the schematic while it plays.</span>}
         {session && operable && stale.any && <span className="warn">The schematic changed: run again to operate parts.</span>}
         {nChanges > 0 && <span className="live-note">
           Re-simulated from 0 s with your changes at the times you made them ({nChanges} change{nChanges > 1 ? "s" : ""}).{" "}
           <button className="btn sm" onClick={clearChanges} title="Forget the recorded changes and re-simulate with the parts' own settings">Clear changes</button>
         </span>}
-        {rerunning && <span className="live-note">Re-simulating from 0 s… nothing after your change is shown until it finishes.</span>}
-        {waiting && <span className="live-note">Waiting for ngspice to compute more time…</span>}
-        {session?.live && !session.note && <span className="dim">Live run grows while it plays (up to {formatSI(session.plan.cap, "s", 3)}).</span>}
-        {session?.note && <span className="warn">{session.note}</span>}
+        {rerunning && !waiting && <span className="live-note">Re-simulating from 0 s… nothing after your change is shown until it finishes.</span>}
+        {waiting && <span className="live-note" role="status">Computing… (the simulation can't keep up at this speed; playback waits for it)</span>}
       </div>
+      {damage.length > 0 && (
+        <div className="damage" role="alert">
+          <div className="damage-head">
+            <b>💥 Component damage</b>
+            <span className="dim small">Failed parts are modeled as open circuits from the failure time; real failures vary.</span>
+            {broken && <button className="btn sm" onClick={repairAll} title="Replace the failed parts at the current playback time and re-simulate (they fail again if nothing changes)">Repair all parts</button>}
+          </div>
+          <DiagnosticList diags={damage} compact />
+        </div>
+      )}
     </div>
   );
+}
+
+/** Operating point: parts above their rating (static values, no averaging or failure modeling). */
+function OpStress({ result }: { result: SimResult }) {
+  const project = useRunProject();
+  const diags = useMemo(() => stressTracks(project, result).filter((tr) => tr.ratio[0] > 1).map((tr): Diagnostic => ({
+    severity: "warning", code: "part-overstress", source: "check", componentIds: [tr.componentId],
+    message: `${tr.ref} is at ${Math.round(tr.ratio[0] * 100)} % of its ${tr.kind === "reverse-voltage" ? "reverse-voltage limit" : `${tr.kind} rating`} (${formatSI(tr.avg[0], tr.kind === "power" ? "W" : tr.kind === "current" ? "A" : "V", 3)} vs ${formatSI(tr.limit, tr.kind === "power" ? "W" : tr.kind === "current" ? "A" : "V", 3)}). It would fail; press ⚡ Live to watch when.`,
+    fix: damageText(project, tr, 0).fix,
+  })), [project, result]);
+  return diags.length ? <DiagnosticList diags={diags} /> : null;
 }
 
 function BodeView({ result, traces, plotRef, height }: { result: SimResult; traces: Trace[]; plotRef: React.RefObject<PlotHandle | null>; height: number }) {
