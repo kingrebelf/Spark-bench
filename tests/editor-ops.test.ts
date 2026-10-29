@@ -131,6 +131,8 @@ describe("hit-testing and marquee", () => {
     expect(hitTest(s, P(10, 3), 0.3)).toMatchObject({ kind: "component", id: R1.id });
     expect(hitTest(s, P(5, 0.1), 0.3)).toMatchObject({ kind: "wire" });
     expect(hitTest(s, P(40, 40), 0.3)).toBeUndefined();
+    // a generous tolerance must not let a nearby wire steal clicks on a part body
+    expect(hitTest(s, P(10, 2.5), 1)).toMatchObject({ kind: "component", id: R1.id });
   });
   it("inside vs touching marquee", () => {
     const { b, R1 } = divider();

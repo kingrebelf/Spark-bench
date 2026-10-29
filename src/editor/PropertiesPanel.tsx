@@ -1,7 +1,6 @@
 // Properties of the selection: part values with SI validation, reference, rotation/mirror,
 // provenance and model limits; net label and wire details; multi-selection summary.
-import { useMemo, useRef } from "react";
-import { computeConnectivity } from "../core/connectivity";
+import { memo, useDeferredValue, useMemo, useRef } from "react";
 import { getPart } from "../core/library";
 import { useProject } from "../core/store";
 import type { ComponentDef, ComponentInstance, PropDef, Rotation } from "../core/types";
@@ -37,7 +36,7 @@ export function checkNumber(raw: string, p: PropDef): { value?: number; error?: 
   return { value: v };
 }
 
-export function PropertiesPanel() {
+export const PropertiesPanel = memo(function PropertiesPanel() {
   const project = useProject((s) => s.project);
   const selection = useProject((s) => s.selection);
   const s = project.schematic;
@@ -51,7 +50,7 @@ export function PropertiesPanel() {
   const label = s.labels.find((l) => l.id === id);
   if (label) return <LabelProps key={label.id} id={label.id} />;
   return <WireProps id={id} />;
-}
+});
 
 function EmptyProps() {
   const s = useProject((st) => st.project.schematic);
@@ -174,9 +173,9 @@ function PartFacts({ comp, def }: { comp: ComponentInstance; def: ComponentDef }
 }
 
 function useNetOf(pointKey: "wire" | "label", id: string) {
-  const project = useProject((s) => s.project);
+  const project = useDeferredValue(useProject((s) => s.project));
   return useMemo(() => {
-    const conn = computeConnectivity(project);
+    const conn = A.connectivityOf(project);
     if (pointKey === "wire") return conn.nets.find((n) => n.wireIds.includes(id));
     const l = project.schematic.labels.find((x) => x.id === id);
     return l ? conn.nets.find((n) => n.points.some((p) => p.x === l.position.x && p.y === l.position.y)) : undefined;

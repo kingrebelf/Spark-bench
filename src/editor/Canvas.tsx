@@ -2,7 +2,7 @@
 // placement (click or drag-and-drop from the library), orthogonal wiring, inline net labels,
 // keyboard shortcuts, status bar and shortcut help. Pure geometry lives in ./ops.
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { computeConnectivity, type Connectivity } from "../core/connectivity";
+import type { Connectivity } from "../core/connectivity";
 import { keyOf, pinWorldPosition } from "../core/geometry";
 import { getPart } from "../core/library";
 import { useProject } from "../core/store";
@@ -38,7 +38,7 @@ export function fitView(r: Rect, w: number, h: number): View {
   return { zoom, x: r.x + r.w / 2 - w / 2 / s, y: r.y + r.h / 2 - h / 2 / s };
 }
 
-export function Canvas() {
+export const Canvas = memo(function Canvas() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const view = useEditor((s) => s.view);
@@ -48,12 +48,13 @@ export function Canvas() {
   const filePath = useProject((s) => s.filePath);
   const result = useSim((s) => s.result);
   const schematic = project.schematic;
-  // Connectivity is O(wires × points); let it lag a frame behind fast drags.
-  const deferredSchematic = useDeferredValue(schematic);
-  const conn = useMemo(() => {
-    const p = { ...project, schematic: deferredSchematic };
-    return computeConnectivity(p);
-  }, [deferredSchematic]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Connectivity is O(wires × points): it lags behind edits (deferred) and is frozen while
+  // dragging, then recomputed on release, so moving parts stays smooth on large schematics.
+  const [dragging, setDragging] = useState(false);
+  const frozen = useRef(schematic);
+  if (!dragging) frozen.current = schematic;
+  const deferredSchematic = useDeferredValue(frozen.current);
+  const conn = useMemo(() => A.connectivityOf({ ...project, schematic: deferredSchematic }), [deferredSchematic]); // eslint-disable-line react-hooks/exhaustive-deps
   const [size, setSize] = useState({ w: 900, h: 600 });
   const [labelEdit, setLabelEdit] = useState<{ id?: string; at: Point; value: string } | null>(null);
   const [flash, setFlash] = useState(0);
@@ -109,7 +110,8 @@ export function Canvas() {
     const v = useEditor.getState().view, sc = PX * v.zoom;
     return { x: (e.clientX - r.left) / sc + v.x, y: (e.clientY - r.top) / sc + v.y };
   };
-  const tol = () => Math.max(0.3, 7 / (PX * useEditor.getState().view.zoom));
+  /** Hit tolerance in grid units: about 7 screen pixels, but never more than a grid unit. */
+  const tol = () => Math.min(1, Math.max(0.3, 7 / (PX * useEditor.getState().view.zoom)));
   const sch = () => useProject.getState().project.schematic;
 
   /** Snap for wiring/labels: nearest pin within reach, else nearest grid point. */
@@ -156,11 +158,13 @@ export function Canvas() {
       return;
     }
     if (e.button !== 0) return;
+    if (ed.floating) { A.moveFloating(g); A.dropFloating(); return; }
     svgRef.current!.setPointerCapture(e.pointerId);
     const t = ed.tool;
     if (typeof t === "object") { A.placePart(t.place, g, ed.placeRotation, ed.placeMirror); return; }
     if (t === "wire") { wireClick(snapTarget(p)); gesture.current = { kind: "wire-drag", client: { x: e.clientX, y: e.clientY } }; return; }
     if (t === "label") {
+      e.preventDefault(); // keep the default mousedown focus from stealing focus from the inline editor
       const at = snapTarget(p);
       setLabelEdit({ at, value: A.suggestLabelName() });
       return;
@@ -207,6 +211,7 @@ export function Canvas() {
       if (Math.max(dx, dy) >= 2) dirLocked.current = true;
     }
     const gs = gesture.current;
+    if (useEditor.getState().floating && !gs) A.moveFloating(snap(p));
     if (gs?.kind === "pan") {
       const sc = PX * gs.origin.zoom;
       useEditor.getState().setView({ ...gs.origin, x: gs.origin.x - (e.clientX - gs.client.x) / sc, y: gs.origin.y - (e.clientY - gs.client.y) / sc });
@@ -219,6 +224,7 @@ export function Canvas() {
         if (!gs.label) gs.label = `Move ${describe(gs.base, gs.ids)}`;
         // first change of a drag opens a new undo step, the rest fold into it
         useProject.getState().update(gs.label, (d) => A.setSchematic(d, next, cur), { merge: gs.moved });
+        if (!gs.moved) setDragging(true);
         gs.moved = true;
       }
     } else if (gs?.kind === "marquee") {
@@ -241,6 +247,7 @@ export function Canvas() {
   const onPointerUp = (e: React.PointerEvent) => {
     const gs = gesture.current;
     gesture.current = null;
+    setDragging(false);
     if (!gs) return;
     if (gs.kind === "marquee") {
       const b = toGrid(e);
@@ -287,7 +294,8 @@ export function Canvas() {
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     const ed = useEditor.getState(), ps = usePointer.getState();
-    if (ps.wire.length) cancelWire();
+    if (ed.floating) A.cancelFloating();
+    else if (ps.wire.length) cancelWire();
     else if (ed.tool !== "select") ed.setTool("select");
   };
 
@@ -340,6 +348,7 @@ export function Canvas() {
         case "Escape":
           handled();
           if (ed.helpOpen) ed.setHelpOpen(false);
+          else if (ed.floating) A.cancelFloating();
           else if (ps.wire.length) cancelWire();
           else if (ed.tool !== "select") ed.setTool("select");
           else A.select([]);
@@ -410,7 +419,7 @@ export function Canvas() {
       onPointerLeave={() => { pointerInside.current = false; usePointer.getState().set({ cursor: null, hover: null }); }}>
       <svg ref={svgRef} className="sb-canvas" role="application" aria-label="Schematic canvas. Press ? for keyboard shortcuts."
         style={{ ["--sym-w" as string]: `${symW}px`, ["--wire-w" as string]: `${wireW}px` }}
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { gesture.current = null; usePointer.getState().set({ marquee: null }); }}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { gesture.current = null; setDragging(false); usePointer.getState().set({ marquee: null }); }}
         onDoubleClick={onDoubleClick} onWheel={onWheel} onContextMenu={onContextMenu}
         onDragOver={onDragOver} onDrop={onDrop} onDragLeave={() => usePointer.getState().set({ cursor: null })}>
         <Grid view={view} w={size.w} h={size.h} />
@@ -435,7 +444,7 @@ export function Canvas() {
       <HelpOverlay />
     </div>
   );
-}
+});
 
 function describe(s: Schematic, ids: string[]) {
   if (ids.length > 3) return `${ids.length} items`;
@@ -687,7 +696,11 @@ function LabelEditor({ edit, view, onDone }: { edit: { id?: string; at: Point; v
   const [value, setValue] = useState(edit.value);
   const ref = useRef<HTMLInputElement>(null);
   const done = useRef(false);
-  useEffect(() => { ref.current?.focus(); ref.current?.select(); }, []);
+  const mountedAt = useRef(0);
+  useEffect(() => {
+    mountedAt.current = performance.now();
+    ref.current?.focus(); ref.current?.select();
+  }, []);
   const s = PX * view.zoom;
   const finish = (v: string | null) => { if (done.current) return; done.current = true; onDone(v); };
   const invalid = !value.trim();
@@ -700,7 +713,11 @@ function LabelEditor({ edit, view, onDone }: { edit: { id?: string; at: Point; v
           if (e.key === "Enter" && !invalid) finish(value);
           else if (e.key === "Escape") finish(null);
         }}
-        onBlur={() => finish(invalid ? null : value)} />
+        onBlur={() => {
+          // a blur right after opening comes from the click that opened us: take focus back
+          if (performance.now() - mountedAt.current < 250) { setTimeout(() => ref.current?.focus(), 0); return; }
+          finish(invalid ? null : value);
+        }} />
       <span>{edit.id ? "Enter to rename · Esc to cancel" : "Name this net · Enter to place · Esc to cancel"}{/^(gnd|0)$/i.test(value.trim()) ? " · connects to ground" : ""}</span>
     </div>
   );

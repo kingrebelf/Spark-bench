@@ -263,7 +263,7 @@ const inRect = (p: Point, r: Rect, pad = 0) => p.x >= r.x - pad && p.x <= r.x + 
 export type Hit =
   | { kind: "pin"; id: string; pinId: string; point: Point }
   | { kind: "label"; id: string }
-  | { kind: "wire"; id: string; segment: number }
+  | { kind: "wire"; id: string; segment: number; dist: number }
   | { kind: "component"; id: string };
 
 /** Find the pin tip nearest to p within `tol` grid units. */
@@ -286,22 +286,29 @@ export function hitWire(s: Schematic, p: Point, tol: number): Extract<Hit, { kin
   for (const w of s.wires) {
     for (let i = 1; i < w.points.length; i++) {
       const d = distToSeg(p, w.points[i - 1], w.points[i]);
-      if (d <= bestD) { bestD = d; best = { kind: "wire", id: w.id, segment: i - 1 }; }
+      if (d <= bestD) { bestD = d; best = { kind: "wire", id: w.id, segment: i - 1, dist: d }; }
     }
   }
   return best;
 }
 
-/** Topmost item under p. Labels first, then wires (thin, so they win when hit precisely), then parts. */
+/**
+ * Topmost item under p. Labels first; then a part whose body contains p, unless a wire passes
+ * within a hair of p (wires are thin, so a precise hit on one wins); then wires within `tol`;
+ * then parts with a little padding.
+ */
 export function hitTest(s: Schematic, p: Point, tol: number, lookup: Lookup = getPart): Hit | undefined {
   for (let i = s.labels.length - 1; i >= 0; i--) if (inRect(p, labelBounds(s.labels[i]))) return { kind: "label", id: s.labels[i].id };
   const w = hitWire(s, p, tol);
-  if (w) return w;
-  for (let i = s.components.length - 1; i >= 0; i--) {
-    const c = s.components[i], def = lookup(c.type);
-    if (def && inRect(p, componentBounds(c, def), 0.3)) return { kind: "component", id: c.id };
-  }
-  return undefined;
+  const partAt = (pad: number) => {
+    for (let i = s.components.length - 1; i >= 0; i--) {
+      const c = s.components[i], def = lookup(c.type);
+      if (def && inRect(p, componentBounds(c, def), pad)) return { kind: "component" as const, id: c.id };
+    }
+    return undefined;
+  };
+  if (!w || w.dist > 0.25) { const c = partAt(0); if (c) return c; }
+  return w ?? partAt(0.3);
 }
 
 const rectContains = (outer: Rect, inner: Rect) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
@@ -409,7 +416,7 @@ function reattach(before: Schematic, after: Schematic, ids: Set<string>, lookup:
 }
 
 /** Translate the selected items by (dx, dy), rubber-banding attached wires. */
-export function moveItems(s: Schematic, ids: Set<string>, dx: number, dy: number, lookup: Lookup = getPart): Schematic {
+export function moveItems(s: Schematic, ids: Set<string>, dx: number, dy: number, lookup: Lookup = getPart, attach = true): Schematic {
   if (!dx && !dy) return s;
   const mv = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
   const after: Schematic = {
@@ -417,7 +424,7 @@ export function moveItems(s: Schematic, ids: Set<string>, dx: number, dy: number
     wires: s.wires.map((w) => (ids.has(w.id) ? { ...w, points: w.points.map(mv) } : w)),
     labels: s.labels.map((l) => (ids.has(l.id) ? { ...l, position: mv(l.position) } : l)),
   };
-  return reattach(s, after, ids, lookup);
+  return attach ? reattach(s, after, ids, lookup) : after;
 }
 
 /** Snapped centre of the selection, used as the pivot for rotate/mirror. */

@@ -34,6 +34,9 @@ interface EditorState {
   noteRecent: (partId: string) => void;
   helpOpen: boolean;
   setHelpOpen: (v: boolean) => void;
+  /** Freshly pasted items following the cursor until the next click (Esc cancels the paste). */
+  floating: { ids: string[]; label: string; anchor: Point } | null;
+  setFloating: (f: EditorState["floating"]) => void;
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
@@ -58,6 +61,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
   helpOpen: false,
   setHelpOpen: (helpOpen) => set({ helpOpen }),
+  floating: null,
+  setFloating: (floating) => set({ floating }),
 }));
 
 export type Hover =
@@ -93,3 +98,6 @@ export const usePointer = create<PointerState>((set) => ({
 
 /** MIME type used when dragging a part from the library onto the canvas. */
 export const PART_MIME = "application/x-sparkbench-part";
+
+// Dev-only handle for scripted UI checks, next to the hub's window.__sb.
+if (import.meta.env.DEV) (window as unknown as { __sbEditor: unknown }).__sbEditor = { useEditor, usePointer };

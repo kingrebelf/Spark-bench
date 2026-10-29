@@ -6,7 +6,8 @@ import { useEditor, usePointer } from "./store";
 
 const MM_PER_UNIT = 1.27;
 
-function toolHint(tool: ReturnType<typeof useEditor.getState>["tool"], wiring: boolean): string {
+function toolHint(tool: ReturnType<typeof useEditor.getState>["tool"], wiring: boolean, floating: boolean): string {
+  if (floating) return "Move the copies into place and click to drop them · R rotate · Esc cancel";
   if (typeof tool === "object") return `Placing ${getPart(tool.place)?.name ?? tool.place}: click to place · R rotate · X mirror · Esc done`;
   if (tool === "wire") return wiring ? "Click to bend · click a pin or wire to finish · / flip corner · Backspace undo point · Esc cancel" : "Click a pin or grid point to start a wire · Esc done";
   if (tool === "label") return "Click a wire or pin to attach a net label · Esc done";
@@ -18,6 +19,7 @@ export function StatusBar({ onFit, onZoom }: { onFit: () => void; onZoom: (f: nu
   const wiring = usePointer((s) => s.wire.length > 0);
   const zoom = useEditor((s) => s.view.zoom);
   const tool = useEditor((s) => s.tool);
+  const floating = useEditor((s) => !!s.floating);
   const setHelp = useEditor((s) => s.setHelpOpen);
   const selCount = useProject((s) => s.selection.length);
   const lastStep = useProject((s) => s.past[s.past.length - 1]?.label);
@@ -28,7 +30,7 @@ export function StatusBar({ onFit, onZoom }: { onFit: () => void; onZoom: (f: nu
         {cursor ? <>x {cursor.x} y {cursor.y} <small>({(cursor.x * MM_PER_UNIT).toFixed(2)}, {(cursor.y * MM_PER_UNIT).toFixed(2)} mm)</small></> : <small>{counts.components.length} parts · {counts.wires.length} wires</small>}
       </span>
       <span className="sel">{selCount ? `${selCount} selected` : "Nothing selected"}</span>
-      <span className="hint">{toolHint(tool, wiring)}</span>
+      <span className="hint">{toolHint(tool, wiring, floating)}</span>
       {lastStep && <span className="last" title="Ctrl+Z undoes this">Last: {lastStep}</span>}
       <span className="zoom">
         <button onClick={() => onZoom(0.8)} title="Zoom out (-)" aria-label="Zoom out">−</button>
@@ -43,7 +45,7 @@ export function StatusBar({ onFit, onZoom }: { onFit: () => void; onZoom: (f: nu
 
 const SHORTCUTS: [string, [string, string][]][] = [
   ["View", [["Wheel", "Zoom at cursor"], ["Middle-drag / Space+drag", "Pan"], ["Arrow keys (nothing selected)", "Pan"], ["F / Home / Ctrl+0", "Zoom to fit"], ["+ / −", "Zoom in / out"]]],
-  ["Select & edit", [["Click / Shift+click", "Select / add or remove"], ["Drag on empty space", "Box select (→ inside, ← touching)"], ["Ctrl+A", "Select all"], ["Drag / Arrow keys", "Move (Shift+arrow: 10 units)"], ["R / Shift+R", "Rotate clockwise / counter-clockwise"], ["X", "Mirror left-right"], ["Delete", "Delete selection"], ["Ctrl+C / X / V / D", "Copy / cut / paste at cursor / duplicate"], ["Ctrl+Z / Ctrl+Y", "Undo / redo"], ["Double-click part", "Edit its value"]]],
+  ["Select & edit", [["Click / Shift+click", "Select / add or remove"], ["Drag on empty space", "Box select (→ inside, ← touching)"], ["Ctrl+A", "Select all"], ["Drag / Arrow keys", "Move (Shift+arrow: 10 units)"], ["R / Shift+R", "Rotate clockwise / counter-clockwise"], ["X", "Mirror left-right"], ["Delete", "Delete selection"], ["Ctrl+C / X / V / D", "Copy / cut / paste / duplicate (copies follow the cursor; click to drop)"], ["Ctrl+Z / Ctrl+Y", "Undo / redo"], ["Double-click part", "Edit its value"]]],
   ["Wiring & labels", [["W", "Wire tool"], ["Drag from a pin", "Draw a wire from that pin"], ["Click", "Add a bend; clicking a pin or wire finishes"], ["/", "Flip which way the corner goes"], ["Double-click / Enter", "Finish the wire here"], ["Backspace", "Remove the last bend"], ["L", "Net label tool"], ["Double-click label / Enter", "Rename label"]]],
   ["Placing parts", [["Click or drag from library", "Place a part"], ["R / X while placing", "Rotate / mirror the ghost"], ["Esc or right-click", "Stop placing"]]],
 ];

@@ -1,11 +1,12 @@
 // Editor commands shared by the canvas, keyboard shortcuts and panels. Every schematic change
 // goes through useProject.update so it is undoable with a readable label.
+import { computeConnectivity, type Connectivity } from "../core/connectivity";
 import { getPart } from "../core/library";
 import { newId } from "../core/project";
 import { useProject } from "../core/store";
 import type { Point, Project, Rotation } from "../core/types";
 import {
-  addWire, copyItems, deleteItems, describeItems, itemsBounds, mirrorItems, moveItems, nextRef, pasteClip, rotateItems,
+  addWire, copyItems, deleteItems, type Clip, describeItems, itemsBounds, mirrorItems, moveItems, nextRef, pasteClip, rotateItems,
   type Schematic,
 } from "./ops";
 import { useEditor, usePointer } from "./store";
@@ -94,26 +95,55 @@ export function cutSelection() {
   select([]);
 }
 
-/** Paste at the cursor when it is over the canvas, otherwise next to the original. */
-export function paste(at?: Point) {
-  const clip = useEditor.getState().clipboard;
-  if (!clip) return;
+/**
+ * Insert a clip. With the cursor over the canvas the copies land at the cursor and float with it
+ * until the next click (Esc cancels); otherwise they land next to the originals.
+ */
+function insertClip(clip: Clip, label: string) {
   const cursor = usePointer.getState().cursor;
-  const target = at ?? cursor ?? { x: clip.origin.x + 4, y: clip.origin.y + 4 };
+  const target = cursor ?? { x: clip.origin.x + 4, y: clip.origin.y + 4 };
   const base = sch();
   const r = pasteClip(base, clip, target);
-  st().update(`Paste ${r.ids.length} item${r.ids.length === 1 ? "" : "s"}`, (d) => setSchematic(d, r.schematic, base));
+  st().update(label, (d) => setSchematic(d, r.schematic, base));
   select(r.ids);
+  if (cursor) useEditor.getState().setFloating({ ids: r.ids, label, anchor: cursor });
+}
+
+export function paste() {
+  const clip = useEditor.getState().clipboard;
+  if (!clip) return;
+  const n = clip.components.length + clip.wires.length + clip.labels.length;
+  insertClip(clip, `Paste ${n} item${n === 1 ? "" : "s"}`);
 }
 
 export function duplicateSelection() {
   const ids = liveSelection();
   const clip = ids.length ? copyItems(sch(), new Set(ids)) : undefined;
-  if (!clip) return;
+  if (clip) insertClip(clip, `Duplicate ${describeItems(sch(), ids)}`);
+}
+
+/** Drop floating (just pasted) items where they are. */
+export function dropFloating() { useEditor.getState().setFloating(null); }
+
+/** Cancel a floating paste: remove the pasted items again. */
+export function cancelFloating() {
+  const f = useEditor.getState().floating;
+  if (!f) return;
+  useEditor.getState().setFloating(null);
+  if (st().past[st().past.length - 1]?.label === f.label) { st().undo(); useProject.setState({ future: st().future.slice(1) }); }
+  select([]);
+}
+
+/** Move floating items so their anchor sits at `to` (folds into the paste's undo step). */
+export function moveFloating(to: Point) {
+  const f = useEditor.getState().floating;
+  if (!f) return;
+  const dx = to.x - f.anchor.x, dy = to.y - f.anchor.y;
+  if (!dx && !dy) return;
   const base = sch();
-  const r = pasteClip(base, clip, { x: clip.origin.x + 4, y: clip.origin.y + 4 });
-  st().update(`Duplicate ${describeItems(base, ids)}`, (d) => setSchematic(d, r.schematic, base));
-  select(r.ids);
+  const next = moveItems(base, new Set(f.ids), dx, dy, getPart, false);
+  st().update(f.label, (d) => setSchematic(d, next, base), { merge: true });
+  useEditor.getState().setFloating({ ...f, anchor: to });
 }
 
 export function placePart(partId: string, at: Point, rotation: Rotation = 0, mirror = false): string | undefined {
@@ -163,4 +193,12 @@ export function renameLabel(id: string, name: string) {
 
 export function boundsOfAll() {
   return itemsBounds(sch());
+}
+
+// Connectivity is the most expensive derived value; canvas and panels share one result per schematic.
+const connCache = new WeakMap<Schematic, Connectivity>();
+export function connectivityOf(project: Project): Connectivity {
+  let c = connCache.get(project.schematic);
+  if (!c) { c = computeConnectivity(project); connCache.set(project.schematic, c); }
+  return c;
 }

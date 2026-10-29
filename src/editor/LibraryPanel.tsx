@@ -1,6 +1,6 @@
 // Component library: search (ranked), collapsible categories, recently used, keyboard navigation,
 // details for the focused part, click-to-place and drag-and-drop onto the canvas.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { allParts, getPart } from "../core/library";
 import type { ComponentDef } from "../core/types";
 import { SymbolPreview } from "./SymbolView";
@@ -38,7 +38,7 @@ export function partScore(p: ComponentDef, q: string): number {
 
 const COLLAPSE_KEY = "sparkbench.library.collapsed";
 
-export function LibraryPanel() {
+export const LibraryPanel = memo(function LibraryPanel() {
   const [q, setQ] = useState("");
   const tool = useEditor((s) => s.tool);
   const setTool = useEditor((s) => s.setTool);
@@ -172,7 +172,7 @@ export function LibraryPanel() {
       {shown && <PartDetails def={shown} />}
     </aside>
   );
-}
+});
 
 function PartDetails({ def }: { def: ComponentDef }) {
   const unsupported = Object.entries(def.analyses ?? {}).filter(([, ok]) => ok === false).map(([a]) => a.toUpperCase());
