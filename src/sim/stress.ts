@@ -21,6 +21,11 @@ export const STRESS_TAU: Record<RatingKind, number> = {
   voltage: 0.001,          // dielectric breakdown is fast, but nanosecond spikes don't count
   "reverse-voltage": 0.05, // electrolytic reverse polarity damages over tens of ms
 };
+/**
+ * Rectifier/signal diodes are rated for AVERAGE forward current (they survive surges many times higher, e.g.
+ * a 1N400x takes ~30 A for one half-cycle), so their current is averaged over 1 s. LEDs keep the 10 ms rule.
+ */
+const AVERAGE_RATED = new Set(["diode", "diode_rectifier", "schottky"]);
 /** Above this fraction of the limit the part shows a warning glow. */
 export const WARN_FRACTION = 0.7;
 
@@ -112,7 +117,7 @@ export function stressTracks(project: Project, result: SimResult, damage: Record
         if (!ok) break;
       }
       if (!ok) continue;
-      const tau = STRESS_TAU[r.kind];
+      const tau = r.kind === "current" && AVERAGE_RATED.has(def.id) ? 1 : STRESS_TAU[r.kind];
       const limit = limitOf(c, def, r);
       const avg = result.analysis === "op" ? raw : ema(x, raw, tau, (damage[c.id] ?? []).flatMap((d) => (d.repairedAt != null ? [d.repairedAt] : [])));
       const ratio = new Float64Array(n);

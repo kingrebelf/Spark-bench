@@ -98,3 +98,25 @@ describe("burnout in a transient run", () => {
     expect(detectFailure(hot.b.project, r, {})).toBeNull();
   }, 60_000);
 });
+
+describe("shipped examples", () => {
+  it("no example trips the damage rules (no false burnouts)", async () => {
+    const { buildExamples } = await import("../src/library/examples");
+    const tripped: string[] = [];
+    for (const e of buildExamples()) {
+      const p = structuredClone(e.project);
+      for (const kind of ["op", "tran"] as const) {
+        if (kind === "tran" && !p.simulation.tran.stop) continue;
+        const r = await runSimulation(p, engine(), kind);
+        if (!r.ok) continue;
+        if (kind === "tran") {
+          const f = detectFailure(p, r, {});
+          if (f) tripped.push(`${e.project.meta.name} (tran): ${f.damage.message}`);
+        } else {
+          for (const tr of stressTracks(p, r)) if (tr.ratio[0] > 1) tripped.push(`${e.project.meta.name} (op): ${tr.ref} ${tr.kind} at ${Math.round(tr.ratio[0] * 100)} %`);
+        }
+      }
+    }
+    expect(tripped).toEqual([]);
+  }, 300_000);
+});
