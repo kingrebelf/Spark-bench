@@ -1,0 +1,385 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "555 blinker with speed control",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "Press Run, then drag the wiper of RV1 while it plays: up = faster, down = slower. RV1 (100 kΩ, wired as a variable resistor) plus R2 = 10 kΩ sets the timing: f = 1.44 / ((R1 + 2·(R2 + RV)) · C), from ≈ 0.65 Hz (wiper at the bottom) to ≈ 6.9 Hz (top); ≈ 1.2 Hz at 50 %."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "timer555",
+        "ref": "U1",
+        "position": {
+          "x": 20,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_002",
+        "type": "vdc",
+        "ref": "V1",
+        "position": {
+          "x": -6,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "9"
+        }
+      },
+      {
+        "id": "c_004",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": -6,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_007",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 20,
+          "y": 18
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_008",
+        "type": "resistor",
+        "ref": "R3",
+        "position": {
+          "x": 32,
+          "y": 10
+        },
+        "rotation": 270,
+        "props": {
+          "value": "470"
+        }
+      },
+      {
+        "id": "c_009",
+        "type": "led",
+        "ref": "D1",
+        "position": {
+          "x": 38,
+          "y": 13
+        },
+        "rotation": 270,
+        "props": {
+          "color": "red"
+        }
+      },
+      {
+        "id": "c_012",
+        "type": "ground",
+        "ref": "#PWR03",
+        "position": {
+          "x": 38,
+          "y": 16
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_014",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 6,
+          "y": 1
+        },
+        "rotation": 0,
+        "props": {
+          "value": "1k"
+        }
+      },
+      {
+        "id": "c_015",
+        "type": "resistor",
+        "ref": "R2",
+        "position": {
+          "x": 6,
+          "y": 11
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10k"
+        }
+      },
+      {
+        "id": "c_016",
+        "type": "potentiometer",
+        "ref": "RV1",
+        "position": {
+          "x": 0,
+          "y": 20
+        },
+        "rotation": 0,
+        "props": {
+          "value": "100k",
+          "position": "50"
+        }
+      },
+      {
+        "id": "c_017",
+        "type": "capacitor",
+        "ref": "C1",
+        "position": {
+          "x": 6,
+          "y": 26
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10u"
+        }
+      },
+      {
+        "id": "c_027",
+        "type": "ground",
+        "ref": "#PWR04",
+        "position": {
+          "x": 6,
+          "y": 29
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_010",
+        "points": [
+          {
+            "x": 28,
+            "y": 10
+          },
+          {
+            "x": 29,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_011",
+        "points": [
+          {
+            "x": 35,
+            "y": 10
+          },
+          {
+            "x": 38,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_019",
+        "points": [
+          {
+            "x": 6,
+            "y": 4
+          },
+          {
+            "x": 6,
+            "y": 8
+          },
+          {
+            "x": 12,
+            "y": 8
+          }
+        ]
+      },
+      {
+        "id": "w_022",
+        "points": [
+          {
+            "x": 3,
+            "y": 20
+          },
+          {
+            "x": 3,
+            "y": 23
+          }
+        ]
+      },
+      {
+        "id": "w_023",
+        "points": [
+          {
+            "x": 0,
+            "y": 23
+          },
+          {
+            "x": 3,
+            "y": 23
+          },
+          {
+            "x": 6,
+            "y": 23
+          }
+        ]
+      },
+      {
+        "id": "w_024",
+        "points": [
+          {
+            "x": 12,
+            "y": 12
+          },
+          {
+            "x": 10,
+            "y": 12
+          },
+          {
+            "x": 10,
+            "y": 14
+          },
+          {
+            "x": 12,
+            "y": 14
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_003",
+        "name": "VCC",
+        "position": {
+          "x": -6,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_005",
+        "name": "VCC",
+        "position": {
+          "x": 22,
+          "y": 2
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_006",
+        "name": "VCC",
+        "position": {
+          "x": 12,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_013",
+        "name": "out",
+        "position": {
+          "x": 28,
+          "y": 10
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_018",
+        "name": "VCC",
+        "position": {
+          "x": 6,
+          "y": -2
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_020",
+        "name": "adj",
+        "position": {
+          "x": 6,
+          "y": 14
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_021",
+        "name": "adj",
+        "position": {
+          "x": 0,
+          "y": 17
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_025",
+        "name": "cap",
+        "position": {
+          "x": 12,
+          "y": 14
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_026",
+        "name": "cap",
+        "position": {
+          "x": 6,
+          "y": 23
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "5",
+      "step": "1m"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_028",
+        "kind": "voltage",
+        "target": {
+          "netName": "out"
+        },
+        "label": "Vout",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_029",
+        "kind": "voltage",
+        "target": {
+          "netName": "cap"
+        },
+        "label": "Vcap",
+        "color": "#ffb74d"
+      },
+      {
+        "id": "p_030",
+        "kind": "current",
+        "target": {
+          "componentId": "c_009"
+        },
+        "label": "I(LED)",
+        "color": "#81c784"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

@@ -51,14 +51,14 @@ per netlist; per-instance values passed as subcircuit parameters).
 
 | Part (id) | Provenance | KiCad symbol / default footprint | Notes |
 |---|---|---|---|
-| Resistor (`resistor`) | ideal | `Device:R`<br>`Resistor_SMD:R_0805_2012Metric` | Ideal linear resistor. Ohm's law: V = I·R. Power rating, tolerance and temperature drift are not modeled. |
-| Potentiometer (`potentiometer`) | ideal | `Device:R_Potentiometer`<br>`Potentiometer_THT:Potentiometer_Bourns_3296W_Vertical` | Two ideal resistors split at the wiper. Contact resistance and taper (log/linear) are not modeled; the position is constant during a run. |
+| Resistor (`resistor`) | ideal | `Device:R`<br>`Resistor_SMD:R_0805_2012Metric` | Ideal linear resistor. Ohm's law: V = I·R. Tolerance and temperature drift are not modeled; the power rating is used only by live simulation's damage check. |
+| Potentiometer (`potentiometer`) | ideal | `Device:R_Potentiometer`<br>`Potentiometer_THT:Potentiometer_Bourns_3296W_Vertical` | Two ideal resistors split at the wiper. Contact resistance and taper (log/linear) are not modeled. Dragged in live mode, the position follows your recorded moves as steps with 1 µs edges. |
 | Capacitor (`capacitor`) | ideal | `Device:C`<br>`Capacitor_SMD:C_0805_2012Metric` | Ideal capacitor (no ESR or leakage). Blocks DC, passes AC. Optional initial voltage for transient runs with UIC. |
-| Electrolytic Capacitor (`capacitor_polarized`) | ideal | `Device:C_Polarized`<br>`Capacitor_THT:CP_Radial_D6.3mm_P2.50mm` | Ideal capacitor plus optional series ESR. Reverse-voltage damage, leakage current and voltage rating are NOT modeled: check the polarity yourself. |
+| Electrolytic Capacitor (`capacitor_polarized`) | ideal | `Device:C_Polarized`<br>`Capacitor_THT:CP_Radial_D6.3mm_P2.50mm` | Ideal capacitor plus optional series ESR. Leakage current is not modeled. In live simulation, exceeding the voltage rating or reversing it beyond the limit marks it damaged (an approximation; real failures vary). |
 | Inductor (`inductor`) | ideal | `Device:L`<br>`Inductor_SMD:L_1206_3216Metric` | Ideal inductor (optional winding resistance; no saturation or core loss). Short circuit at DC. |
 | Transformer (`transformer`) | ideal | `Device:Transformer_1P_1S` | Linear coupled inductors with winding resistance. Core saturation, hysteresis and losses are not modeled. |
-| Switch (SPST) (`switch_spst`) | ideal | `Switch:SW_SPST`<br>`Button_Switch_THT:SW_DIP_SPSTx01_Slide_9.78x4.72mm_W7.62mm_P2.54mm` | Static ideal switch: a resistor of Ron (closed) or Roff (open). The state is fixed for a whole simulation run; to switch during a run, drive a node with a pulse source instead. Contact bounce is not modeled. |
-| Push Button (`push_button`) | ideal | `Switch:SW_Push`<br>`Button_Switch_THT:SW_PUSH_6mm` | Static ideal switch: a resistor of Ron (closed) or Roff (open). The state is fixed for a whole simulation run; to switch during a run, drive a node with a pulse source instead. Contact bounce is not modeled. |
+| Switch (SPST) (`switch_spst`) | ideal | `Switch:SW_SPST`<br>`Button_Switch_THT:SW_DIP_SPSTx01_Slide_9.78x4.72mm_W7.62mm_P2.54mm` | Ideal switch: a resistor of Ron (closed) or Roff (open). Operated on the schematic during a transient run, it becomes a voltage-controlled switch (Ron/Roff) that changes state at the recorded times with a 1 µs edge. Contact bounce is not modeled. |
+| Push Button (`push_button`) | ideal | `Switch:SW_Push`<br>`Button_Switch_THT:SW_PUSH_6mm` | Ideal switch: a resistor of Ron (closed) or Roff (open). Operated on the schematic during a transient run, it becomes a voltage-controlled switch (Ron/Roff) that changes state at the recorded times with a 1 µs edge. Contact bounce is not modeled. |
 
 ### Sources
 
@@ -142,8 +142,19 @@ per netlist; per-instance values passed as subcircuit parameters).
 
 - **555 control pin (5)** is not brought out: an unconnected pin would fail the floating-pin check, and almost every
   circuit only decouples it. The KiCad export leaves pin 5 unconnected.
-- **Switches and buttons are static per run** (a resistor of Ron or Roff). To switch during a run, drive the circuit
-  with a pulse source.
+- **Switches, buttons and pots** use their property value (Closed / Pressed / Position) for op, ac and a plain
+  transient run: a fixed resistor. In a live transient run you click the switch, hold the button or drag the pot on the
+  schematic; each part then gets a PWL control node that follows the recorded changes (1 µs edges), driving a
+  voltage-controlled switch (Ron/Roff) or the pot's two halves, and the run is re-simulated from 0 s (live mode lives in
+  `src/sim/**`). Contact bounce is not modeled.
+- **Ratings and damage (live simulation only).** Parts with ratings carry them as editable props that never change
+  the netlist: resistor power (default 0.25 W), capacitor voltage (50 V), electrolytic voltage (25 V) and reverse
+  voltage (1 V), LED max current (30 mA), diode max current (small-signal 300 mA, rectifier and Schottky 1 A) and
+  zener power (0.5 W). The simulation layer compares a moving average of each stress with its rating (the averaging
+  times are set in `src/sim/**`, e.g. power over 0.5 s, so brief surges are tolerated): amber glow from 70 %, red at
+  100 %, and when the average passes the limit the part fails and is re-simulated as an open circuit from that time,
+  with a Diagnostic naming the stress and a sized replacement. It is a teaching approximation; real failures depend
+  on heat sinking, pulse shape and the individual part. Transistors, op-amps and ICs have no ratings yet.
 - **Digital outputs draw their current from GND, not VCC**, so supply-current readings of logic circuits are not
   meaningful. Input capacitance, noise margins and output current limits of real families are not modeled.
 - **Multi-unit KiCad symbols**: the op-amps and comparator map to unit A of the dual package plus the power unit
@@ -194,3 +205,9 @@ checks the files are current, load without diagnostics, have no pin sitting insi
 | `555-monostable` | tran | single ≈ 1.1 s pulse after the 10 ms trigger |
 | `logic-gates` | tran | AND/OR/XOR truth tables over time |
 | `counter-4bit` | tran | binary count 1, 2, … 15, 0 on falling clock edges |
+| `led-switch` | tran, live | click SW1 during a run: LED off (as saved) / ≈ 15 mA on |
+| `pot-dimmer` | tran, live | drag RV1's wiper during a run: I(LED) 0 (bottom), ≈ 6 mA (50 %, as saved), ≈ 19 mA (top) |
+| `555-adjustable-blinker` | tran, live | drag RV1's wiper during a run: ≈ 0.65 Hz (bottom), ≈ 1.19 Hz (50 %, as saved), ≈ 6.9 Hz (top) |
+
+The three live examples are also tested at both extremes of their control and with a live change (a PWL schedule,
+as the sim layer records a click or drag), and none trips the damage rules.

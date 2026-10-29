@@ -1,0 +1,182 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "LED with switch",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "Press Run, then click switch SW1 to turn the LED on and off while the simulation plays. 9 V battery, 470 Ω, red LED: (9 − 1.9 V) / 470 Ω ≈ 15 mA when on, within the LED's 30 mA rating."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "battery",
+        "ref": "BT1",
+        "position": {
+          "x": 0,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "9"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "switch_spst",
+        "ref": "SW1",
+        "position": {
+          "x": 8,
+          "y": 0
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_003",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 17,
+          "y": 0
+        },
+        "rotation": 270,
+        "props": {
+          "value": "470"
+        }
+      },
+      {
+        "id": "c_004",
+        "type": "led",
+        "ref": "D1",
+        "position": {
+          "x": 24,
+          "y": 4
+        },
+        "rotation": 270,
+        "props": {
+          "color": "red"
+        }
+      },
+      {
+        "id": "c_008",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": 0,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_009",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 24,
+          "y": 7
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_005",
+        "points": [
+          {
+            "x": 0,
+            "y": 6
+          },
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 4,
+            "y": 0
+          }
+        ]
+      },
+      {
+        "id": "w_006",
+        "points": [
+          {
+            "x": 12,
+            "y": 0
+          },
+          {
+            "x": 14,
+            "y": 0
+          }
+        ]
+      },
+      {
+        "id": "w_007",
+        "points": [
+          {
+            "x": 20,
+            "y": 0
+          },
+          {
+            "x": 24,
+            "y": 0
+          },
+          {
+            "x": 24,
+            "y": 1
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_010",
+        "name": "a",
+        "position": {
+          "x": 24,
+          "y": 1
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "10",
+      "step": "1m"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_011",
+        "kind": "current",
+        "target": {
+          "componentId": "c_004"
+        },
+        "label": "I(LED)",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_012",
+        "kind": "voltage",
+        "target": {
+          "netName": "a"
+        },
+        "label": "V(LED)",
+        "color": "#ffb74d"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

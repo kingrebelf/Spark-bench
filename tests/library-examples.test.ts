@@ -11,7 +11,10 @@ import { partTypes, getPart } from "../src/core/library";
 import { parseProject } from "../src/core/project";
 import { simulate } from "../src/core/simulate";
 import { pinWorldPosition, onSegment } from "../src/core/geometry";
-import type { AnalysisKind, Project, SimResult } from "../src/core/types";
+import { runSimulation } from "../src/sim/run";
+import { toPwl } from "../src/sim/live";
+import { detectFailure } from "../src/sim/stress";
+import type { AnalysisKind, Project, PropValue, SimResult } from "../src/core/types";
 
 const examples = buildExamples();
 const load = (file: string): Project => {
@@ -39,6 +42,7 @@ describe("example files", () => {
     expect(examples.map((e) => e.file)).toEqual([
       "resistor-divider", "rc-charging", "rc-lowpass-bode", "led-resistor", "half-wave-rectifier", "bjt-common-emitter",
       "opamp-inverting", "555-astable-blinker", "555-monostable", "logic-gates", "counter-4bit",
+      "led-switch", "pot-dimmer", "555-adjustable-blinker",
     ]);
   });
   for (const e of examples) {
@@ -180,4 +184,85 @@ describe("examples simulate as documented", () => {
     // Clock falls at 0.5 ms + k ms.
     for (let k = 0; k < 19; k++) expect(value(k * 1e-3 + 0.9e-3), `after ${k + 1} edges`).toBe((k + 1) % 16);
   }, 60_000);
+});
+
+// Interactive examples: the saved state, the other extreme of each control, and a live change (the
+// sim layer's PWL schedule, as when the user clicks or drags during a run). None may trip the damage rules.
+describe("interactive examples", () => {
+  const withProp = (p: Project, ref: string, key: string, value: PropValue) => {
+    const q = structuredClone(p);
+    q.schematic.components.find((c) => c.ref === ref)!.props[key] = value;
+    return q;
+  };
+  const ledCurrent = (p: Project, r: SimResult, t: number) => {
+    const led = p.schematic.components.find((c) => c.type === "led")!;
+    const v = r.vectors.find((x) => x.kind === "current" && x.componentId === led.id)!;
+    const k = r.x!.real.findIndex((x) => x >= t);
+    return Math.abs(v.real[k]);
+  };
+  const live = async (p: Project, ref: string, initial: number, changes: [number, number][]) => {
+    const c = p.schematic.components.find((x) => x.ref === ref)!;
+    const r = await runSimulation(p, engine(), "tran", { schedules: new Map([[c.id, toPwl(initial, changes, 1e-6)]]) });
+    expect(r.ok).toBe(true);
+    return r;
+  };
+  // runSimulation (the sim layer) also saves the probed branch currents.
+  const run = async (p: Project) => { const r = await runSimulation(p, engine(), "tran"); expect(r.ok).toBe(true); return r; };
+  const noDamage = (p: Project, r: SimResult) => expect(detectFailure(p, r, {})?.damage.message).toBeUndefined();
+
+  it("LED with switch: off as saved, ≈ 15 mA when closed, follows a live click", async () => {
+    const p = load("led-switch");
+    p.simulation.tran = { stop: "1", step: "1m" };
+    expect(ledCurrent(p, await run(p), 0.5)).toBeLessThan(1e-6);
+    const on = withProp(p, "SW1", "closed", true);
+    const r = await run(on);
+    expect(ledCurrent(on, r, 0.5) * 1e3).toBeGreaterThan(14); expect(ledCurrent(on, r, 0.5) * 1e3).toBeLessThan(16.5);
+    noDamage(on, r);
+    const l = await live(p, "SW1", 0, [[0.3, 1], [0.6, 0]]);
+    expect(ledCurrent(p, l, 0.2)).toBeLessThan(1e-6);
+    expect(ledCurrent(p, l, 0.45)).toBeGreaterThan(14e-3);
+    expect(ledCurrent(p, l, 0.8)).toBeLessThan(1e-6);
+    noDamage(p, l);
+  }, 60_000);
+
+  it("pot dimmer: ≈ 6 mA at 50 %, ≈ 19 mA at the top, off at the bottom, follows a live drag", async () => {
+    const p = load("pot-dimmer");
+    p.simulation.tran = { stop: "1", step: "1m" };
+    const mid = ledCurrent(p, await run(p), 0.5) * 1e3;
+    expect(mid).toBeGreaterThan(5); expect(mid).toBeLessThan(7);
+    const top = withProp(p, "RV1", "position", "100");
+    const rt = await run(top);
+    expect(ledCurrent(top, rt, 0.5) * 1e3).toBeGreaterThan(17); expect(ledCurrent(top, rt, 0.5) * 1e3).toBeLessThan(21);
+    noDamage(top, rt);
+    const bottom = withProp(p, "RV1", "position", "0");
+    expect(ledCurrent(bottom, await run(bottom), 0.5)).toBeLessThan(1e-5);
+    const l = await live(p, "RV1", 50, [[0.3, 100], [0.6, 0]]);
+    expect(ledCurrent(p, l, 0.2) * 1e3).toBeCloseTo(mid, 0);
+    expect(ledCurrent(p, l, 0.45) * 1e3).toBeGreaterThan(17);
+    expect(ledCurrent(p, l, 0.8)).toBeLessThan(1e-5);
+    noDamage(p, l);
+  }, 60_000);
+
+  it("555 with speed control: ≈ 1.19 Hz as saved, ≈ 6.9 Hz at the top, ≈ 0.65 Hz at the bottom, speeds up on a live drag", async () => {
+    const freq = (r: SimResult, t0: number, t1: number) => {
+      const rise = crossings(r, "out", 3.5, "rise").filter((t) => t >= t0 && t <= t1);
+      return (rise.length - 1) / (rise[rise.length - 1] - rise[0]);
+    };
+    const f = (rv: number) => 1.44 / ((1e3 + 2 * (10e3 + rv)) * 10e-6);
+    const p = load("555-adjustable-blinker");
+    const r = await run(p);
+    expect(Math.abs(freq(r, 1.5, 5) / f(50e3) - 1)).toBeLessThan(0.03);
+    noDamage(p, r);
+    const top = withProp(p, "RV1", "position", "100");
+    top.simulation.tran = { stop: "2", step: "1m" };
+    const rt = await run(top);
+    expect(Math.abs(freq(rt, 0.5, 2) / f(0) - 1)).toBeLessThan(0.03);
+    noDamage(top, rt);
+    const bottom = withProp(p, "RV1", "position", "0");
+    bottom.simulation.tran = { stop: "8", step: "1m" };
+    expect(Math.abs(freq(await run(bottom), 2, 8) / f(100e3) - 1)).toBeLessThan(0.03);
+    const l = await live(p, "RV1", 50, [[3, 100]]);
+    expect(freq(l, 3.5, 5)).toBeGreaterThan(6);
+    noDamage(p, l);
+  }, 120_000);
 });

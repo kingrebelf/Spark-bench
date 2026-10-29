@@ -296,8 +296,69 @@ function counterDemo(): Example {
   return { file: "counter-4bit", project: s.project, expected: "At 1 ms steps after each falling clock edge the outputs read 1, 2, 3 … 15, 0, 1 … in binary (Q0 = LSB)." };
 }
 
+// ---------------------------------------------------------------- interactive (live mode)
+// Descriptions say what to click or drag; the default state is the safe, documented one.
+
+function ledSwitch(): Example {
+  const s = new Sheet("LED with switch", "Press Run, then click switch SW1 to turn the LED on and off while the simulation plays. 9 V battery, 470 Ω, red LED: (9 − 1.9 V) / 470 Ω ≈ 15 mA when on, within the LED's 30 mA rating.", "tran",
+    { tran: { stop: "10", step: "1m" } });
+  const b = s.part("battery", "BT1", 0, 10, { value: "9" });
+  const sw = s.part("switch_spst", "SW1", 8, 0);
+  const r = s.part("resistor", "R1", 17, 0, { value: "470" }, 270);
+  const d = s.part("led", "D1", 24, 4, { color: "red" }, 270);
+  const [r1, r2] = [s.pin(r, "1"), s.pin(r, "2")].sort((p, q) => p.x - q.x);
+  s.wire(s.pin(b, "1"), P(0, 0), s.pin(sw, "1"));
+  s.wire(s.pin(sw, "2"), r1);
+  s.wire(r2, P(24, 0), s.pin(d, "A"));
+  s.gnd(s.pin(b, "2")); s.gnd(s.pin(d, "K"));
+  s.label("a", s.pin(d, "A"));
+  s.probeI(d, "I(LED)"); s.probeV("a", "V(LED)");
+  return { file: "led-switch", project: s.project, expected: "Switch open (as saved): LED off, I(LED) ≈ 0. Switch closed: I(LED) ≈ 15 mA, V(a) ≈ 1.9 V." };
+}
+
+function potDimmer(): Example {
+  const s = new Sheet("Pot dimmer", "Press Run, then drag the wiper of RV1 up and down while it plays: the LED dims and brightens. The pot divides 9 V; transistor Q1 (emitter follower) copies the wiper voltage minus 0.7 V onto the 330 Ω + LED, so I(LED) ≈ (V(w) − 0.7 − 1.9 V) / 330 Ω: 0 at the bottom, ≈ 6 mA at 50 %, ≈ 19 mA at the top (LED rating 30 mA).", "tran",
+    { tran: { stop: "10", step: "1m" } });
+  const v = s.part("vdc", "V1", -8, 10, { value: "9" });
+  const pot = s.part("potentiometer", "RV1", 8, 10, { value: "10k", position: "50" });
+  const q = s.part("2n3904", "Q1", 18, 10);
+  const r = s.part("resistor", "R1", 20, 18, { value: "330" });
+  const d = s.part("led", "D1", 20, 25, { color: "red" }, 270);
+  s.label("VCC", s.pin(v, "1")); s.gnd(s.pin(v, "2"));
+  s.label("VCC", s.pin(pot, "1")); s.gnd(s.pin(pot, "3"));
+  s.wire(s.pin(pot, "2"), s.pin(q, "B"));
+  s.label("VCC", s.pin(q, "C"));
+  s.wire(s.pin(q, "E"), s.pin(r, "1"));
+  s.wire(s.pin(r, "2"), s.pin(d, "A"));
+  s.gnd(s.pin(d, "K"));
+  s.label("w", s.pin(pot, "2")); s.label("e", s.pin(q, "E"));
+  s.probeV("w", "V(wiper)"); s.probeI(d, "I(LED)");
+  return { file: "pot-dimmer", project: s.project, expected: "Wiper at 50 % (as saved): V(w) ≈ 4.5 V, I(LED) ≈ 5-7 mA. At 100 %: ≈ 17-21 mA. At 0 %: LED off." };
+}
+
+function astableAdjustable(): Example {
+  const s = new Sheet("555 blinker with speed control", "Press Run, then drag the wiper of RV1 while it plays: up = faster, down = slower. RV1 (100 kΩ, wired as a variable resistor) plus R2 = 10 kΩ sets the timing: f = 1.44 / ((R1 + 2·(R2 + RV)) · C), from ≈ 0.65 Hz (wiper at the bottom) to ≈ 6.9 Hz (top); ≈ 1.2 Hz at 50 %.", "tran",
+    { tran: { stop: "5", step: "1m" } });
+  const { u, d } = timer555Core(s);
+  const r1 = s.part("resistor", "R1", 6, 1, { value: "1k" });
+  const r2 = s.part("resistor", "R2", 6, 11, { value: "10k" });
+  const pot = s.part("potentiometer", "RV1", 0, 20, { value: "100k", position: "50" });
+  const c = s.part("capacitor", "C1", 6, 26, { value: "10u" });
+  s.label("VCC", s.pin(r1, "1"));
+  s.wire(s.pin(r1, "2"), P(6, 8), s.pin(u, "DIS"));        // (6,4) -> (6,8) -> (12,8); R2 pin 1 at (6,8)
+  s.label("adj", s.pin(r2, "2")); s.label("adj", s.pin(pot, "1"));
+  s.wire(s.pin(pot, "2"), P(3, 23));                       // wiper tied to pin 3: RV = (100 % − position) · 100 kΩ
+  s.wire(s.pin(pot, "3"), P(3, 23), s.pin(c, "1"));        // (0,23) -> (3,23) -> (6,23)
+  s.wire(s.pin(u, "THR"), P(10, 12), P(10, 14), s.pin(u, "TRIG"));
+  s.label("cap", s.pin(u, "TRIG")); s.label("cap", s.pin(c, "1"));
+  s.gnd(s.pin(c, "2"));
+  s.probeV("out", "Vout"); s.probeV("cap", "Vcap"); s.probeI(d, "I(LED)");
+  return { file: "555-adjustable-blinker", project: s.project, expected: "Wiper at 50 % (as saved): ≈ 1.19 Hz. Wiper at 100 %: ≈ 6.9 Hz; at 0 %: ≈ 0.65 Hz. V(cap) ramps between 3 V and 6 V." };
+}
+
 export function buildExamples(): Example[] {
-  return [divider(), rcCharging(), rcLowpass(), ledResistor(), halfWave(), bjtAmp(), opampInverting(), astable(), monostable(), logicGates(), counterDemo()];
+  return [divider(), rcCharging(), rcLowpass(), ledResistor(), halfWave(), bjtAmp(), opampInverting(), astable(), monostable(), logicGates(), counterDemo(),
+    ledSwitch(), potDimmer(), astableAdjustable()];
 }
 
 /** Serialized form written to examples/*.sbproj (stable: no timestamps from the clock). */

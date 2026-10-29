@@ -1,0 +1,235 @@
+{
+  "format": "sparkbench-project",
+  "version": 1,
+  "meta": {
+    "name": "Pot dimmer",
+    "created": "2026-10-28T00:00:00.000Z",
+    "modified": "2026-10-28T00:00:00.000Z",
+    "appVersion": "0.1.0",
+    "description": "Press Run, then drag the wiper of RV1 up and down while it plays: the LED dims and brightens. The pot divides 9 V; transistor Q1 (emitter follower) copies the wiper voltage minus 0.7 V onto the 330 Ω + LED, so I(LED) ≈ (V(w) − 0.7 − 1.9 V) / 330 Ω: 0 at the bottom, ≈ 6 mA at 50 %, ≈ 19 mA at the top (LED rating 30 mA)."
+  },
+  "schematic": {
+    "components": [
+      {
+        "id": "c_001",
+        "type": "vdc",
+        "ref": "V1",
+        "position": {
+          "x": -8,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "9"
+        }
+      },
+      {
+        "id": "c_002",
+        "type": "potentiometer",
+        "ref": "RV1",
+        "position": {
+          "x": 8,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {
+          "value": "10k",
+          "position": "50"
+        }
+      },
+      {
+        "id": "c_003",
+        "type": "2n3904",
+        "ref": "Q1",
+        "position": {
+          "x": 18,
+          "y": 10
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_004",
+        "type": "resistor",
+        "ref": "R1",
+        "position": {
+          "x": 20,
+          "y": 18
+        },
+        "rotation": 0,
+        "props": {
+          "value": "330"
+        }
+      },
+      {
+        "id": "c_005",
+        "type": "led",
+        "ref": "D1",
+        "position": {
+          "x": 20,
+          "y": 25
+        },
+        "rotation": 270,
+        "props": {
+          "color": "red"
+        }
+      },
+      {
+        "id": "c_007",
+        "type": "ground",
+        "ref": "#PWR01",
+        "position": {
+          "x": -8,
+          "y": 14
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_009",
+        "type": "ground",
+        "ref": "#PWR02",
+        "position": {
+          "x": 8,
+          "y": 13
+        },
+        "rotation": 0,
+        "props": {}
+      },
+      {
+        "id": "c_014",
+        "type": "ground",
+        "ref": "#PWR03",
+        "position": {
+          "x": 20,
+          "y": 28
+        },
+        "rotation": 0,
+        "props": {}
+      }
+    ],
+    "wires": [
+      {
+        "id": "w_010",
+        "points": [
+          {
+            "x": 11,
+            "y": 10
+          },
+          {
+            "x": 14,
+            "y": 10
+          }
+        ]
+      },
+      {
+        "id": "w_012",
+        "points": [
+          {
+            "x": 20,
+            "y": 14
+          },
+          {
+            "x": 20,
+            "y": 15
+          }
+        ]
+      },
+      {
+        "id": "w_013",
+        "points": [
+          {
+            "x": 20,
+            "y": 21
+          },
+          {
+            "x": 20,
+            "y": 22
+          }
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "id": "l_006",
+        "name": "VCC",
+        "position": {
+          "x": -8,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_008",
+        "name": "VCC",
+        "position": {
+          "x": 8,
+          "y": 7
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_011",
+        "name": "VCC",
+        "position": {
+          "x": 20,
+          "y": 6
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_015",
+        "name": "w",
+        "position": {
+          "x": 11,
+          "y": 10
+        },
+        "rotation": 0
+      },
+      {
+        "id": "l_016",
+        "name": "e",
+        "position": {
+          "x": 20,
+          "y": 14
+        },
+        "rotation": 0
+      }
+    ]
+  },
+  "simulation": {
+    "analysis": "tran",
+    "tran": {
+      "stop": "10",
+      "step": "1m"
+    },
+    "ac": {
+      "sweep": "dec",
+      "points": 20,
+      "start": "1",
+      "stop": "1MEG"
+    },
+    "probes": [
+      {
+        "id": "p_017",
+        "kind": "voltage",
+        "target": {
+          "netName": "w"
+        },
+        "label": "V(wiper)",
+        "color": "#4fc3f7"
+      },
+      {
+        "id": "p_018",
+        "kind": "current",
+        "target": {
+          "componentId": "c_005"
+        },
+        "label": "I(LED)",
+        "color": "#ffb74d"
+      }
+    ]
+  },
+  "models": [],
+  "kicad": {}
+}

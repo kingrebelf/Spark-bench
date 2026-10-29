@@ -9,7 +9,7 @@ import { arcCoil, circle, el, hlead, line, modelProp, n, poly, rect, sn, text, u
 
 export const resistor: ComponentDef = {
   id: "resistor", name: "Resistor", category: "Passive", refPrefix: "R",
-  description: "Ideal linear resistor. Ohm's law: V = I·R. Power rating, tolerance and temperature drift are not modeled.",
+  description: "Ideal linear resistor. Ohm's law: V = I·R. Tolerance and temperature drift are not modeled; the power rating is used only by live simulation's damage check.",
   keywords: ["res", "ohm"],
   pins: [{ id: "1", name: "1", x: 0, y: -3 }, { id: "2", name: "2", x: 0, y: 3 }],
   symbol: [vlead(-3, -1.6), rect(-0.8, -1.6, 1.6, 3.2), vlead(1.6, 3)],
