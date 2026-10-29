@@ -1,6 +1,10 @@
 // Passive parts. Pin positions mirror the matching KiCad library symbols
 // (1 grid unit = 1.27 mm), so pin maps stay 1:1 on export.
-import type { ComponentDef, SpiceEmitContext } from "../core/types";
+import type { ComponentDef, PropDef, SpiceEmitContext } from "../core/types";
+
+/** A rating prop (component damage in live simulation); it never changes the netlist. */
+const ratingProp = (key: string, label: string, def: string, unit: string, help: string): PropDef =>
+  ({ key, label, kind: "number", unit, default: def, min: 0, help: `${help} Used by live simulation to show over-stress and burnout (averaged, see the simulation docs). Not used by ngspice.` });
 import { arcCoil, circle, el, hlead, line, modelProp, n, poly, rect, sn, text, uid, vlead } from "./util";
 
 export const resistor: ComponentDef = {
@@ -9,8 +13,9 @@ export const resistor: ComponentDef = {
   keywords: ["res", "ohm"],
   pins: [{ id: "1", name: "1", x: 0, y: -3 }, { id: "2", name: "2", x: 0, y: 3 }],
   symbol: [vlead(-3, -1.6), rect(-0.8, -1.6, 1.6, 3.2), vlead(1.6, 3)],
-  props: [{ key: "value", label: "Resistance", kind: "number", unit: "Ω", default: "1k", min: 0 }],
+  props: [{ key: "value", label: "Resistance", kind: "number", unit: "Ω", default: "1k", min: 0 }, ratingProp("power", "Power rating", "0.25", "W", "Continuous power the resistor can dissipate (¼ W for common through-hole parts).")],
   provenance: "ideal",
+  ratings: [{ kind: "power", prop: "power", default: 0.25 }],
   spice: (c) => [`${el("R", c)} ${c.node("1")} ${c.node("2")} ${n(c, "value")}`],
   kicad: { symbol: "Device:R", footprint: "Resistor_SMD:R_0805_2012Metric", pinMap: { 1: "1", 2: "2" } },
   displayProps: ["value"],
@@ -93,8 +98,10 @@ export const capacitor: ComponentDef = {
   props: [
     { key: "value", label: "Capacitance", kind: "number", unit: "F", default: "1u", min: 0 },
     { key: "ic", label: "Initial voltage", kind: "text", unit: "V", default: "", help: "Used only when the transient analysis has 'Use initial conditions' enabled.", model: true },
+    ratingProp("vmax", "Voltage rating", "50", "V", "Highest voltage across the capacitor."),
   ],
   provenance: "ideal",
+  ratings: [{ kind: "voltage", prop: "vmax", default: 50 }],
   dcPaths: [],
   spice: (c) => {
     const ic = c.str("ic").trim();
@@ -114,9 +121,12 @@ export const capacitorPolarized: ComponentDef = {
     { key: "value", label: "Capacitance", kind: "number", unit: "F", default: "100u", min: 0 },
     modelProp("esr", "ESR", "0", "Ω", "Equivalent series resistance. 0 = ideal."),
     { key: "ic", label: "Initial voltage", kind: "text", unit: "V", default: "", help: "Used only when the transient analysis has 'Use initial conditions' enabled.", model: true },
+    ratingProp("vmax", "Voltage rating", "25", "V", "Highest voltage across the capacitor (+ above −)."),
+    ratingProp("vrev", "Reverse voltage limit", "1", "V", "How far − may rise above + before the capacitor is damaged."),
   ],
   provenance: "ideal",
-  accuracyNote: "Ideal capacitor plus optional series ESR. Reverse-voltage damage, leakage current and voltage rating are NOT modeled: check the polarity yourself.",
+  ratings: [{ kind: "voltage", prop: "vmax", default: 25 }, { kind: "reverse-voltage", prop: "vrev", default: 1 }],
+  accuracyNote: "Ideal capacitor plus optional series ESR. Leakage current is not modeled. In live simulation, exceeding the voltage rating or reversing it beyond the limit marks it damaged (an approximation; real failures vary).",
   dcPaths: [],
   spice: (c) => {
     const ic = c.str("ic").trim();

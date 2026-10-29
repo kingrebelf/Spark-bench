@@ -1,6 +1,6 @@
 // Diodes, BJTs and MOSFETs. Built-in models are generic or "-like" fits (see accuracyNote);
 // any of these parts can instead use a project-imported .model of the right type (modelId).
-import type { ComponentDef, PinDef, Shape, SpiceEmitContext } from "../core/types";
+import type { ComponentDef, PinDef, PropDef, Shape, SpiceEmitContext } from "../core/types";
 import { modelSlot } from "./spiceImport";
 import { chooseModel, circle, diodeBody, el, line, modelProp, params, poly, sn, vlead } from "./util";
 
@@ -14,6 +14,14 @@ function hashName(prefix: string, s: string): string {
 // ---------------------------------------------------------------- diodes
 
 // KiCad Device:D family: pin 1 = K (left), pin 2 = A (right).
+/** A rating prop (component damage in live simulation); it never changes the netlist. */
+const ratingProp = (key: string, label: string, def: string, unit: string, help: string): PropDef =>
+  ({ key, label, kind: "number", unit, default: def, min: 0, help: `${help} Used by live simulation to show over-stress and burnout (averaged, see the simulation docs). Not used by ngspice.` });
+const currentRating = (def: string, what: string) => ({
+  props: [ratingProp("imax", "Max current", def, "A", `Highest current the part takes (${what}).`)],
+  ratings: [{ kind: "current" as const, prop: "imax", default: Number(def.replace("m", "e-3")) }],
+});
+
 const diodePins: PinDef[] = [{ id: "K", name: "K", x: -3, y: 0 }, { id: "A", name: "A", x: 3, y: 0 }];
 const diodeMap = { K: "1", A: "2" };
 const importNote = " You can replace the model with an imported diode .model (Model → choose).";
@@ -29,7 +37,7 @@ export const diode: ComponentDef = {
   keywords: ["rectifier", "1n4148", "signal diode", "silicon"],
   pins: diodePins,
   symbol: diodeBody(),
-  props: [],
+  ...currentRating("300m", "1N4148 class: 300 mA average"),
   provenance: "generic",
   accuracyNote: "Typical small-signal silicon parameters in the 1N4148 class (Is=2.52n, N=1.752, Rs=0.568, BV=100). Not a manufacturer's model." + importNote,
   spice: (c) => diodeSpice(c, "D_SB_SIGNAL", () => ".model D_SB_SIGNAL D(Is=2.52n N=1.752 Rs=0.568 Cjo=4p M=0.4 tt=20n BV=100 IBV=100u)"),
@@ -42,7 +50,7 @@ export const diodeRectifier: ComponentDef = {
   keywords: ["1n4007", "1n4001", "power diode", "bridge", "rectifier"],
   pins: diodePins,
   symbol: diodeBody(),
-  props: [],
+  ...currentRating("1", "1N400x class: 1 A average"),
   provenance: "generic",
   accuracyNote: "Typical 1N400x-class values in the style of common public models (Is≈7n, N≈1.8, Rs≈34m, BV=1000); not checked against a manufacturer file. Reverse recovery is approximate." + importNote,
   spice: (c) => diodeSpice(c, "D_SB_RECT", () => ".model D_SB_RECT D(Is=7.03n Rs=0.0341 N=1.81 Cjo=10p M=0.33 Vj=0.7 tt=4u BV=1000 IBV=5u)"),
@@ -65,8 +73,10 @@ export const led: ComponentDef = {
     { key: "vf", label: "Forward voltage", kind: "text", unit: "V", default: "", help: "Leave blank to use the color's typical value.", model: true },
     modelProp("if", "At current", "20m", "A", "Current at which the forward voltage is specified."),
     modelProp("rs", "Series resistance", "8", "Ω", "Dynamic resistance of the die and leads."),
+    ratingProp("imax", "Max current", "30m", "A", "Absolute maximum forward current (typical 5 mm LEDs: 20 mA continuous, 30-50 mA absolute)."),
   ],
   provenance: "generic",
+  ratings: [{ kind: "current", prop: "imax", default: 0.03 }],
   accuracyNote: "Shockley diode (N=2) fitted so that V = Vf at the given current; typical values for 5 mm LEDs, real parts vary ±0.2 V. Light output, color shift and reverse breakdown (≈5 V) are approximate.",
   spice: (c) => {
     const vfRaw = c.str("vf").trim();
@@ -94,7 +104,9 @@ export const zener: ComponentDef = {
     { key: "vz", label: "Zener voltage", kind: "number", unit: "V", default: "5.1", min: 0 },
     modelProp("izt", "Test current", "5m", "A", "Current at which Vz is specified."),
     modelProp("rz", "Dynamic resistance", "5", "Ω", "Slope of the breakdown region (datasheet Zzt)."),
+    ratingProp("pmax", "Power rating", "0.5", "W", "Power the zener can dissipate (½ W for common DO-35 parts)."),
   ],
+  ratings: [{ kind: "power", prop: "pmax", default: 0.5 }],
   provenance: "generic",
   accuracyNote: "Generic SPICE diode with breakdown set so V = Vz at the test current, plus series resistance Rz. Temperature coefficient and the soft knee of low-voltage Zeners are not modeled." + importNote,
   spice: (c) => {
@@ -113,7 +125,7 @@ export const schottky: ComponentDef = {
   keywords: ["schottky", "1n5819", "1n5817", "low drop", "fast"],
   pins: diodePins,
   symbol: [{ kind: "line", x1: -3, y1: 0, x2: 3, y2: 0 }, poly([[1, -1.2], [1, 1.2], [-1, 0]], true, true), poly([[-1.6, -0.8], [-1.6, -1.2], [-1, -1.2], [-1, 1.2], [-0.4, 1.2], [-0.4, 0.8]])],
-  props: [],
+  ...currentRating("1", "1N5819 class: 1 A average"),
   provenance: "generic",
   accuracyNote: "Generic 1 A, 40 V Schottky parameters (Is=3µ, N=1.06, Rs=70m); not a manufacturer's model." + importNote,
   spice: (c) => diodeSpice(c, "D_SB_SCHOTTKY", () => ".model D_SB_SCHOTTKY D(Is=3u N=1.06 Rs=0.07 Cjo=110p M=0.35 Vj=0.35 BV=40 IBV=1m EG=0.69)"),
