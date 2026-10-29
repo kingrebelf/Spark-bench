@@ -78,8 +78,14 @@ def assign(fp, f):
     fp.SetPath(pcbnew.KIID_PATH(f["path"]))
     fp.SetSheetname(f["sheetname"])
     fp.SetSheetfile(f["sheetfile"])
+    # Copied symbol fields are data, not board text: hidden, as KiCad's Update PCB adds them.
     for k, v in f.get("fields", {}).items():
         fp.SetField(k, v)
+        fp.GetField(k).SetVisible(False)
+    # KiCad convention: Value text lives on the Fab layer, never on silkscreen.
+    val = fp.Value()
+    if val.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS):
+        val.SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
     for pad in fp.Pads():
         n = pad.GetNumber()
         net = f["pads"].get(n)

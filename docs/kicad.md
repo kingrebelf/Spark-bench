@@ -24,7 +24,8 @@ Writes `<name>.kicad_pro`, `<name>.kicad_sch` and, if chosen, `<name>.kicad_pcb`
 - **Schematic.** Symbols are copied from the installed `.kicad_sym` libraries into the schematic's `lib_symbols`
   (derived `extends` symbols are flattened the way KiCad does it). Each part gets Reference, Value, Footprint,
   Datasheet/Description from the library, custom fields from the part mapping, pin UUIDs and an `instances`
-  block. Wires, junctions, net labels and ground symbols (`power:GND`) are written. SparkBench labels that mean
+  block. Only Reference and Value are visible; Footprint, Datasheet, `Sim.*` and custom fields are hidden.
+  Wires, junctions, net labels and ground symbols (`power:GND`) are written. SparkBench labels that mean
   ground (`GND`, `gnd`, `0`) become `power:GND` symbols: checked with kicad-cli, KiCad 10 joins only a label
   named exactly `GND` to the GND power net, while `gnd` or `0` would be separate nets there.
 - **Grid.** 1 SparkBench grid unit = 1.27 mm, so every pin stays on KiCad's default 50 mil grid. The drawing is
@@ -85,7 +86,8 @@ again. Pin numbers always come from the part's `pinMap`.
 
 The PCB is built by KiCad's own `pcbnew` Python module, from **KiCad's netlist of the exported schematic**, so net
 names, references, footprints and symbol paths are KiCad's. Footprints are loaded from the installed `.pretty`
-libraries, pads get their nets, symbol fields are copied onto footprints (as *Update PCB* does), and footprints
+libraries, pads get their nets, symbol fields are copied onto footprints (as *Update PCB* does) as hidden fields, the Value text sits on the
+Fab layer (never silkscreen), so only reference designators are printed; footprints
 are placed in rows following the schematic (top-to-bottom bands, left to right) so schematic neighbours start
 as board neighbours, inside a rectangular `Edge.Cuts` outline with a 5 mm margin.
 

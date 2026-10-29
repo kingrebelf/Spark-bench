@@ -421,9 +421,10 @@ function placedSymbol(a: PlaceArgs): SList {
     const lx = lat ? Number(arg(lat, 1)) : 0, ly = lat ? Number(arg(lat, 2)) : 0, la = lat ? Number(arg(lat, 3) ?? 0) : 0;
     const t = kicadTransform(lx, ly, a.o);
     const angle = (la + a.o.angle) % 180;
-    const hidden = lp ? (child(lp, "hide") ? arg(child(lp, "hide")) === "yes" : false) : true;
     const effects = child(lp, "effects") ? clone(child(lp, "effects")!) : list("effects", font());
-    const hide = hidden || k === "Footprint" || k === "Datasheet" || k === "Description" || (k.startsWith("Sim.") && k !== "Sim.Params");
+    // Only Reference and Value are shown; Footprint, Datasheet, Sim.* and user fields are data.
+    const libHidden = !!lp && arg(child(lp, "hide")) === "yes";
+    const hide = libHidden || (k !== "Reference" && k !== "Value");
     props.push(list("property", str(k), str(v),
       list("at", num(roundMm(a.at.x + t.x)), num(roundMm(a.at.y + t.y)), num(angle)),
       hide ? list("hide", "yes") : null,

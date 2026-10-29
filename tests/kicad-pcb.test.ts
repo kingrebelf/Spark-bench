@@ -11,9 +11,10 @@ import { KicadLibraries, projectLibTables } from "../src/kicad/node/libs";
 import { splitLibId } from "../src/kicad/symbols";
 import { exportNetlist, runDrc, writeText } from "../src/kicad/node/cli";
 import { generatePcb } from "../src/kicad/node/pcb";
-import { arg, child, children, parse } from "../src/kicad/sexpr";
+import { arg, child, children, parse, type SList } from "../src/kicad/sexpr";
 import { parseKicadNetlist } from "../src/kicad/netlist";
 import type { Project } from "../src/core/types";
+import { parseProject } from "../src/core/project";
 
 const kicad = findKicad();
 const libs = kicad ? new KicadLibraries(kicad) : null;
@@ -95,7 +96,7 @@ describe.skipIf(!canRun)("PCB generation (pcbnew)", () => {
     expect(drc.footprintIssues).toEqual([]);                     // schematic parity: board matches the schematic
     // Placement problems: courtyard overlaps, anything against the board edge, silk of two different footprints
     // overlapping, library resolution. (Some library footprints overlap their own silkscreen; that is not placement.)
-    const refsIn = (v: { items: { description: string }[] }) => new Set(v.items.map((i) => /of (S+) on/.exec(i.description)?.[1]).filter(Boolean)).size;
+    const refsIn = (v: { items: { description: string }[] }) => new Set(v.items.map((i) => /of (\S+) on/.exec(i.description)?.[1]).filter(Boolean)).size;
     const placement = drc.violations.filter((v) => /courtyard|edge|lib_footprint|clearance/i.test(v.type) && v.type !== "silk_overlap" || (v.type === "silk_overlap" && refsIn(v) > 1));
     expect(placement).toEqual([]);
   }, 120000);
@@ -134,5 +135,42 @@ describe.skipIf(!canRun)("PCB generation (pcbnew)", () => {
     expect(res.placed.find((p) => p.ref === "R7")?.kept).toBe(false);
     const board = parse(await fs.readFile(pcbPath, "utf8"));
     expect(children(board, "footprint").length).toBe(13);
+  }, 180000);
+
+  it("shows only Reference (and Value on Fab) on the board, only Reference/Value on the schematic (555 blinker)", async () => {
+    const project = parseProject(await fs.readFile("examples/555-astable-blinker.sbproj", "utf8")).project!;
+    const { dir, sch, netlist } = await build(project, "blinker");
+    const pcbPath = path.join(dir, "blinker.kicad_pcb");
+    const res = await generatePcb(kicad!, libs!, { pcbPath, netlistText: netlist, update: false });
+    expect(res.skipped).toEqual([]);
+    const hidden = (p: SList) => arg(child(p, "hide")) === "yes" || arg(child(child(p, "effects"), "hide")) === "yes";
+    const board = parse(await fs.readFile(pcbPath, "utf8"));
+    const shown: string[] = [];
+    for (const fp of children(board, "footprint")) {
+      for (const p of children(fp, "property")) {
+        if (hidden(p)) continue;
+        const layer = arg(child(p, "layer"));
+        shown.push(`${arg(p)}@${layer}`);
+        if (arg(p) === "Value") expect(layer, `Value of ${arg(fp)}`).toMatch(/^[FB]\.Fab$/);
+        else expect(arg(p), `visible field on ${arg(fp)}`).toBe("Reference");
+      }
+    }
+    expect(shown.some((s) => s.startsWith("Reference@"))).toBe(true);
+    // D1 carries Sim.* fields: they reach the footprint, hidden.
+    const d1 = children(board, "footprint").find((fp) => children(fp, "property").some((p) => arg(p) === "Reference" && arg(p, 2) === "D1"))!;
+    const simParams = children(d1, "property").find((p) => arg(p) === "Sim.Params");
+    expect(simParams).toBeTruthy();
+    expect(hidden(simParams!)).toBe(true);
+    const schem = parse(await fs.readFile(sch, "utf8"));
+    for (const s of children(schem, "symbol")) {
+      for (const p of children(s, "property")) {
+        if (!hidden(p)) expect(["Reference", "Value"], `visible ${arg(p)} on ${arg(child(s, "lib_id"))}`).toContain(arg(p));
+      }
+    }
+    const drc = await runDrc(kicad!, pcbPath);
+    expect(drc.ok).toBe(true);
+    expect(drc.footprintIssues).toEqual([]);
+    const refsIn = (v: { items: { description: string }[] }) => new Set(v.items.map((i) => /of (\S+) on/.exec(i.description)?.[1]).filter(Boolean)).size;
+    expect(drc.violations.filter((v) => /courtyard|edge|lib_footprint|clearance/i.test(v.type) && v.type !== "silk_overlap" || (v.type === "silk_overlap" && refsIn(v) > 1))).toEqual([]);
   }, 180000);
 });
