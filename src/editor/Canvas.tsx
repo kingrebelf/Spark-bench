@@ -575,8 +575,13 @@ const PartView = memo(function PartView({ inst: c, def, selected, open }: { inst
   const b = componentBounds(c, def);
   const tall = b.h >= b.w;
   const lines = def.role === "ground" ? [] : [c.ref, ...(def.displayProps ?? []).map((k) => displayValue(c, def, k))];
-  const tx = tall ? b.x + b.w + 0.7 : b.x + b.w / 2;
-  const ty = tall ? b.y + b.h / 2 - (lines.length - 1) * 0.65 : b.y - 1 - (lines.length - 1) * 1.3;
+  // beside a tall part / above a wide one, unless a pin ends on that edge (op-amps, gates, ICs): then the top-right corner
+  const corner = def.pins.some((p) => {
+    const pp = pinWorldPosition(c, def, p.id);
+    return !!pp && (tall ? Math.abs(pp.x - (b.x + b.w)) < 0.01 : Math.abs(pp.y - b.y) < 0.01);
+  });
+  const tx = corner ? b.x + b.w + 0.4 : tall ? b.x + b.w + 0.7 : b.x + b.w / 2;
+  const ty = corner ? b.y - 0.8 - (lines.length - 1) * 1.3 : tall ? b.y + b.h / 2 - (lines.length - 1) * 0.65 : b.y - 1 - (lines.length - 1) * 1.3;
   return (
     <g className={`part ${selected ? "selected" : ""}`}>
       <title>{`${c.ref} Â· ${def.name}`}</title>
@@ -585,7 +590,7 @@ const PartView = memo(function PartView({ inst: c, def, selected, open }: { inst
         <SymbolShapes shapes={def.symbol} />
       </g>
       {lines.length > 0 && (
-        <text x={tx} y={ty} fontSize={1.1} textAnchor={tall ? "start" : "middle"} dominantBaseline="central" className="part-text">
+        <text x={tx} y={ty} fontSize={1.1} textAnchor={tall || corner ? "start" : "middle"} dominantBaseline="central" className="part-text">
           {lines.map((t, i) => <tspan key={i} x={tx} dy={i === 0 ? 0 : 1.3} className={i === 0 ? "ref" : "val"}>{t}</tspan>)}
         </text>
       )}

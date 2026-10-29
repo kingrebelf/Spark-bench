@@ -7,8 +7,9 @@ import {
   pasteClip, rotateItems, routeAvoiding, routeOrthogonal, rubberBand, simplifyPolyline, type Schematic,
 } from "../src/editor/ops";
 import { keyOf } from "../src/core/geometry";
+import { registerParts } from "../src/core/library";
 import { Builder, divider } from "./helpers";
-import type { Point } from "../src/core/types";
+import type { ComponentDef, Point } from "../src/core/types";
 
 const P = (x: number, y: number): Point => ({ x, y });
 const isOrthogonal = (pts: Point[]) => pts.every((p, i) => i === 0 || p.x === pts[i - 1].x || p.y === pts[i - 1].y);
@@ -125,14 +126,21 @@ describe("rubber-banding", () => {
   });
   it("mirror is a screen-horizontal flip for rotated parts", () => {
     const b = new Builder();
-    const D = b.place("diode", "D1", 0, 0, {}, 90); // A at (0,-3), K at (0,3) when rotated 90
+    // test-local two-pin part so the check doesn't depend on a library symbol's pin order
+    const def: ComponentDef = {
+      id: "test_polar2", name: "Test polar part", category: "Test", description: "", refPrefix: "D",
+      pins: [{ id: "A", name: "A", x: -3, y: 0 }, { id: "K", name: "K", x: 3, y: 0 }],
+      symbol: [], props: [], provenance: "none",
+    };
+    registerParts([def]);
+    const D = b.place(def.id, "D1", 0, 0, {}, 90); // A at (0,-3), K at (0,3) when rotated 90
     const s = mirrorItems(b.project.schematic, new Set([D.id]));
     const d2 = s.components[0];
     expect(d2.rotation).toBe(270);
     expect(d2.mirror).toBe(true);
     // a vertical part flipped left-right keeps its pins where they were
-    const p = hitPin(s, P(0, -3), 0.1)!;
-    expect(p.pinId).toBe("A");
+    expect(hitPin(s, P(0, -3), 0.1)!.pinId).toBe("A");
+    expect(hitPin(s, P(0, 3), 0.1)!.pinId).toBe("K");
   });
 });
 

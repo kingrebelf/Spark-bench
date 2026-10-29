@@ -34,7 +34,10 @@ describe("library search ranking", () => {
   });
   it("finds parts by keyword and by reference letter", () => {
     const hits = (q: string) => allParts().filter((p) => partScore(p, q) > 0).map((p) => p.id);
-    expect(hits("battery")).toContain("vdc");
+    // keyword-only hit on a test-local def, independent of the current library
+    const def = { ...getPart("resistor")!, id: "test_cell", name: "Cell", keywords: ["accumulator"], description: "" };
+    expect(partScore(def, "accu")).toBeGreaterThan(0);
+    expect(partScore(def, "accu")).toBeLessThan(partScore(def, "cell"));
     expect(hits("gnd")).toContain("ground");
     expect(hits("d")).toContain("diode");
   });
