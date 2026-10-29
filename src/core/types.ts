@@ -124,6 +124,12 @@ export interface ComponentDef {
   interactive?: { kind: "toggle" | "momentary" | "slider"; prop: string; min?: number; max?: number };
   /** Visual indicator driven by simulation results (e.g. LED glow from its forward current). */
   indicator?: { kind: "led"; currentPin: string; colorProp?: string; ratedCurrent?: number };
+  /**
+   * Stress limits checked against transient/op results (component damage). "current" = |current| through the
+   * part, "power" = |V(pins) · I|, "voltage" = |V(pins[0]) − V(pins[1])|, "reverse-voltage" = V(pins[1]) − V(pins[0]).
+   * The limit is the SI value of `prop` (falling back to `default`); `pins` default to the first two pins.
+   */
+  ratings?: { kind: "current" | "power" | "voltage" | "reverse-voltage"; prop?: string; default: number; pins?: [string, string] }[];
   /** Text shown on the canvas next to the symbol: prop keys to display. */
   displayProps?: string[];
 }
