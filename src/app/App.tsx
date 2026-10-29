@@ -7,6 +7,7 @@ import { useEditor } from "../editor/store";
 import { SimPanel } from "../sim/SimPanel";
 import { AssistantPanel } from "../ai/AssistantPanel";
 import { KicadPanel } from "../kicad/KicadPanel";
+import { ExamplesMenu } from "./Examples";
 import { checkRecovery, newProject, openProject, saveProject, startRecoveryAutosave } from "./fileActions";
 import { useApp } from "./store";
 
@@ -50,6 +51,7 @@ export function App() {
         <button className="btn" onClick={openProject} title="Open project (Ctrl+O)">Open</button>
         <button className="btn" onClick={() => saveProject()} title="Save (Ctrl+S)">Save</button>
         <button className="btn" onClick={() => saveProject(true)} title="Save as (Ctrl+Shift+S)">Save as</button>
+        <ExamplesMenu />
         <span className="sep" />
         <button className="btn" onClick={undo} disabled={!past.length} title="Undo (Ctrl+Z)">↶ Undo</button>
         <button className="btn" onClick={redo} disabled={!future.length} title="Redo (Ctrl+Y)">↷ Redo</button>
