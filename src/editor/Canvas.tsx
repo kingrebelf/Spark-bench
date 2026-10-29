@@ -16,6 +16,7 @@ import { PART_MIME, useEditor, usePointer, type Hover, type View } from "./store
 import { HelpOverlay, StatusBar } from "./StatusBar";
 import "./editor.css";
 import { SimCanvasOverlay } from "../sim/CanvasOverlay";
+import { liveInput } from "../sim/interact";
 
 export { nextRef } from "./ops";
 
@@ -27,7 +28,8 @@ type Gesture =
   | { kind: "pan"; client: Point; origin: View }
   | { kind: "move"; start: Point; base: Schematic; ids: string[]; label: string; moved: boolean; dx: number; dy: number }
   | { kind: "marquee"; a: Point; add: boolean; prev: string[] }
-  | { kind: "wire-drag"; client: Point };
+  | { kind: "wire-drag"; client: Point }
+  | { kind: "live" };
 
 const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 const snap = (p: Point): Point => ({ x: Math.round(p.x), y: Math.round(p.y) });
@@ -174,6 +176,8 @@ export const Canvas = memo(function Canvas() {
     if (ed.floating) { A.moveFloating(g); A.dropFloating(); return; }
     capture(e);
     const t = ed.tool;
+    // Live simulation: pressing a switch/button/pot operates it instead of selecting or wiring.
+    if (t === "select" && !e.shiftKey && liveInput.down(p)) { gesture.current = { kind: "live" }; return; }
     if (typeof t === "object") { A.placePart(t.place, g, ed.placeRotation, ed.placeMirror); return; }
     if (t === "wire") { wireClick(snapTarget(p)); gesture.current = { kind: "wire-drag", client: { x: e.clientX, y: e.clientY } }; return; }
     if (t === "label") {
@@ -240,6 +244,8 @@ export const Canvas = memo(function Canvas() {
         if (!gs.moved) setDragging(true);
         gs.moved = true;
       }
+    } else if (gs?.kind === "live") {
+      liveInput.move(p);
     } else if (gs?.kind === "marquee") {
       patch.marquee = { a: gs.a, b: p };
     } else if (!gs) {
@@ -262,6 +268,7 @@ export const Canvas = memo(function Canvas() {
     gesture.current = null;
     setDragging(false);
     if (!gs) return;
+    if (gs.kind === "live") { liveInput.up(); return; }
     if (gs.kind === "marquee") {
       const b = toGrid(e);
       usePointer.getState().set({ marquee: null });
@@ -283,7 +290,7 @@ export const Canvas = memo(function Canvas() {
       if (ps.wire.length >= 2) finishWire(ps.wire);
       return;
     }
-    if (t !== "select") return;
+    if (t !== "select" || liveInput.hit(p)) return;
     const hit = hitTest(sch(), p, tol());
     if (hit?.kind === "label") {
       const l = sch().labels.find((x) => x.id === hit.id)!;
@@ -446,7 +453,7 @@ export const Canvas = memo(function Canvas() {
       onPointerLeave={() => { pointerInside.current = false; usePointer.getState().set({ cursor: null, hover: null }); }}>
       <svg ref={svgRef} className="sb-canvas" role="application" aria-label="Schematic canvas. Press ? for keyboard shortcuts."
         style={{ ["--sym-w" as string]: `${symW}px`, ["--wire-w" as string]: `${wireW}px` }}
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { gesture.current = null; setDragging(false); usePointer.getState().set({ marquee: null }); }}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { if (gesture.current?.kind === "live") liveInput.up(); gesture.current = null; setDragging(false); usePointer.getState().set({ marquee: null }); }}
         onDoubleClick={onDoubleClick} onContextMenu={onContextMenu}
         onDragOver={onDragOver} onDrop={onDrop} onDragLeave={() => usePointer.getState().set({ cursor: null })}>
         <Grid view={view} w={size.w} h={size.h} />
