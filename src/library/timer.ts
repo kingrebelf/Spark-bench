@@ -10,10 +10,13 @@ const TRG = s(`${VCC}/3-V(trig,gnd)`);
 const THR = s(`V(thres,gnd)-2*${VCC}/3`);
 
 // Priorities as in the datasheet's function table: RESET low wins, then TRIGGER < VCC/3 sets,
-// then THRESHOLD > 2/3 VCC resets, otherwise the latch holds. At the DC operating point (time = 0)
-// the latch is held reset, like a 555 powering up: discharge on, timing capacitor empty. The latch is
-// strongly regenerative (it holds by driving toward its own level), as in the real chip; without that a
-// slow threshold crossing could settle half-reset instead of flipping.
+// then THRESHOLD > 2/3 VCC resets, otherwise the latch holds. The latch is a voltage-controlled switch
+// driven by a command: +1 set, -1 reset, and when holding, +1 or -1 from its own output. Because the
+// switch is either on or off, the latch cannot settle half-set, whatever the time step (a latch made of a
+// regenerative B-source + capacitor could, with steps far longer than its ns time constant). The hold term
+// comes from the output, not from the switch's hysteresis memory, which ngspice can lose when it cuts the
+// time step at a sharp edge. At the DC operating point (time = 0) the latch is held reset, like a 555
+// powering up: discharge on, timing capacitor empty.
 const SUBCKT = [
   ".subckt SB_555 gnd trig out rst thres disch vcc params: vdrop=1.7 ron=10 rdis=10 iq=3m",
   "* SparkBench behavioral 555: comparators at VCC/3 and 2VCC/3, SR latch, discharge switch, output stage.",
@@ -21,8 +24,10 @@ const SUBCKT = [
   "Rt trig gnd 100meg",
   "Rh thres gnd 100meg",
   "Rr rst gnd 100meg",
-  `Bl gnd q I = 1m*((time > 0 ? 1 : 0)*(1-${RST})*(${TRG}*${VCC}+(1-${TRG})*(1-${THR})*${VCC}*${Q})-V(q,gnd))`,
-  "Cl q gnd 1p",
+  `Bc cmd gnd V = time > 0 ? (1-${RST})*(${TRG}+(1-${TRG})*((1-${THR})*(2*${Q}-1)-${THR}))-${RST} : -1`,
+  "Sl vcc q cmd gnd SB555L OFF",
+  ".model SB555L SW(Vt=0 Vh=0.5 Ron=1 Roff=1g)",
+  "Rl q gnd 1meg",
   `Bd disch gnd I = (1-${Q})*V(disch,gnd)/{rdis}`,
   "Rdo disch gnd 100meg",
   `Bo oi gnd V = ${Q}*max(${VCC}-{vdrop},0)`,

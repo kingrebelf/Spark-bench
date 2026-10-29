@@ -32,11 +32,13 @@ per netlist; per-instance values passed as subcircuit parameters).
   transparent and is a bare capacitor while holding, so it keeps its value at any simulator time step. Master and slave
   use non-overlapping clock thresholds (60 % / 40 % of VCC), so slow clock edges cannot race. At the DC operating point
   every flip-flop starts with Q = 0 (or 1 if ~PRE is low).
-- **555**: comparators at exactly VCC/3 and 2·VCC/3 (10 mV transition), a strongly regenerative SR latch with the
-  datasheet priorities (RESET > TRIGGER > THRESHOLD), a 10 Ω discharge conductance, and an output of VCC − `vdrop`.
+- **555**: comparators at exactly VCC/3 and 2·VCC/3 (10 mV transition), an SR latch with the
+  datasheet priorities (RESET > TRIGGER > THRESHOLD) built from a voltage-controlled switch (on or off, never
+  half-set, so it flips at any time step; its hold command comes from its own output), a 10 Ω discharge conductance, and an output of VCC − `vdrop`.
   At the operating point the latch is held reset (power-up with an empty timing capacitor). Measured over several R/C/VCC
   sets: astable frequency within 1.2 % of 1.44/((R1+2R2)C), duty within 0.7 points of (R1+R2)/(R1+2R2), monostable
-  within 0.9 % of 1.1·RC (the tests assert 3 %, 2 points and 2 %). An op analysis of a 555 circuit shows the forced
+  within 0.9 % of 1.1·RC (the tests assert 3 %, 2 points and 2 %, and that the astable example keeps
+  oscillating for 20 s at max steps of 1 ms, 200 µs and 100 µs). An op analysis of a 555 circuit shows the forced
   power-up state, not a steady state.
 - **Op-amps**: tanh-limited transconductance (slew rate) into an RC dominant pole (open-loop gain and GBW), output clamp
   inside the rails with per-rail headroom, input resistance, output resistance. LM358-like/TL072-like use datasheet

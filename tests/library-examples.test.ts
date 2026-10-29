@@ -139,6 +139,21 @@ describe("examples simulate as documented", () => {
     expect(Math.max(...cap)).toBeCloseTo(6, 0); expect(Math.min(...cap)).toBeCloseTo(3, 0);
   }, 120_000);
 
+  // The latch must flip at every threshold crossing whatever the step: a regenerative latch with a
+  // ns time constant used to settle half-set (cap stuck at 6.00 V) after 2.57 s at 1 ms / 100 µs steps.
+  for (const step of ["1m", "200u", "100u"]) {
+    it(`555 astable keeps oscillating for 20 s at max step ${step}`, async () => {
+      const p = load("555-astable-blinker");
+      p.simulation.tran = { ...p.simulation.tran, stop: "20", step };
+      const r = await sim(p);
+      const rise = crossings(r, "out", 3.5, "rise");
+      expect(rise.length).toBeGreaterThanOrEqual(19);
+      expect(rise[rise.length - 1]).toBeGreaterThan(19);
+      const per = (rise[rise.length - 1] - rise[1]) / (rise.length - 2);
+      expect(Math.abs(per * 1.44 / ((10e3 + 2 * 68e3) * 10e-6) - 1)).toBeLessThan(0.03);
+    }, 120_000);
+  }
+
   it("555 monostable: one ≈ 1.1 s pulse after the trigger", async () => {
     const r = await sim(load("555-monostable"));
     expect(at(r, "out", 5e-3)).toBeLessThan(0.1);
