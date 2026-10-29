@@ -62,9 +62,9 @@ export function addSaves(netlist: string, saves: string[]): string {
 /** A SpiceEngine wrapper that adds `.save` lines and remembers the netlist it actually ran. */
 export class SavingEngine implements SpiceEngine {
   lastNetlist = "";
-  constructor(private inner: SpiceEngine, private saves: string[]) {}
+  constructor(private inner: SpiceEngine, private saves: string[], private transform: (netlist: string) => string = (t) => t) {}
   run(netlist: string): Promise<EngineOutput> {
-    this.lastNetlist = addSaves(netlist, this.saves);
+    this.lastNetlist = this.transform(addSaves(netlist, this.saves));
     return this.inner.run(this.lastNetlist);
   }
 }

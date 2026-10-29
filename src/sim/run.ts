@@ -5,23 +5,31 @@ import { generateNetlist, type NetlistOptions } from "../core/netlist";
 import { simulate, type SpiceEngine } from "../core/simulate";
 import type { AnalysisKind, Project, SimResult } from "../core/types";
 import { currentSaveFor, mapDeviceCurrents, planCurrentSaves, SavingEngine } from "./probes";
+import { applyFailures, needsCurrent, type Damage } from "./stress";
+
+export interface RunOptions extends NetlistOptions {
+  /** Failed parts (live damage): each is opened from its failure time (and closed again at a repair). */
+  damage?: Record<string, Damage[]>;
+}
 
 /**
  * Run one analysis. `opts.schedules` (live mode) is passed to both netlist passes so element names match.
  * Indicator parts (LEDs) get their current saved automatically except in AC, where ngspice-WASM can't
  * write device currents.
  */
-export async function runSimulation(project: Project, engine: SpiceEngine, analysis: AnalysisKind = project.simulation.analysis, opts: NetlistOptions = {}): Promise<SimResult> {
+export async function runSimulation(project: Project, engine: SpiceEngine, analysis: AnalysisKind = project.simulation.analysis, opts: RunOptions = {}): Promise<SimResult> {
   const nl = generateNetlist(project, analysis, getPart, opts);
   const plan = planCurrentSaves(project, nl, analysis);
   if (analysis !== "ac") {
     for (const c of project.schematic.components) {
-      if (!getPart(c.type)?.indicator) continue;
+      const def = getPart(c.type);
+      if (!def?.indicator && !needsCurrent(def)) continue;
       const save = currentSaveFor(c.id, nl)?.save;
       if (save) plan.saves.push(save);
     }
   }
-  const saving = new SavingEngine(engine, plan.saves);
+  const damage = analysis === "tran" ? opts.damage : undefined;
+  const saving = new SavingEngine(engine, plan.saves, damage ? (t) => applyFailures(t, nl, project, damage) : undefined);
   const result = await simulate(project, saving, analysis, getPart, opts);
   // When the engine ran, show the text it really received (with our .save line).
   if (saving.lastNetlist) result.netlist = saving.lastNetlist;
