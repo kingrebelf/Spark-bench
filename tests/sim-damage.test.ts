@@ -48,7 +48,7 @@ describe("burnout in a transient run", () => {
     const f = detectFailure(b.project, r, {})!;
     expect(f.componentId).toBe(P.id);
     expect(f.t).toBeLessThan(1e-3);
-    expect(f.damage.message).toMatch(/X1 carried more than its rating of 30 mA/);
+    expect(f.damage.message).toMatch(/X1 carried \d+(\.\d+)? m?A \(max 30 mA\) and failed at/);
     expect(f.damage.fix).toMatch(/series resistor/);
     const damage: Record<string, Damage[]> = { [P.id]: [f.damage] };
     const r2 = await runSimulation(b.project, engine(), "tran", { damage });
@@ -71,7 +71,8 @@ describe("burnout in a transient run", () => {
     const f = detectFailure(hot.b.project, r, {})!;
     expect(f.t).toBeGreaterThan(0.05);
     expect(f.t).toBeLessThan(0.15); // 0.5 s · ln(1.44 / 1.19) ≈ 0.096 s
-    expect(f.damage.message).toMatch(/X1 dissipated more than its rating of 250 mW/);
+    expect(f.damage.message).toMatch(/X1 dissipated 1\.44 W \(rated 250 mW\)/);
+    expect(f.damage.fix).toMatch(/≥ 3 W resistor, or at least 860 Ω/);
     const tr = stressTracks(hot.b.project, r)[0];
     expect(tr.avg[tr.avg.length - 1]).toBeCloseTo(1.44 * (1 - Math.exp(-2 / 0.5)), 3);
     const cool = across("resistor", { value: "1k" }, "12");
@@ -84,7 +85,7 @@ describe("burnout in a transient run", () => {
   it("an electrolytic wired backwards beyond its reverse limit fails; the right way round it is fine", async () => {
     const back = across("capacitor_polarized", { value: "10u" }, "5", ["2", "1"]);
     const f = detectFailure(back.b.project, await runSimulation(back.b.project, engine(), "tran"), {});
-    expect(f?.damage.message).toMatch(/reverse-voltage limit of 1 V/);
+    expect(f?.damage.message).toMatch(/reverse limit 1 V/);
     const fwd = across("capacitor_polarized", { value: "10u" }, "5");
     expect(detectFailure(fwd.b.project, await runSimulation(fwd.b.project, engine(), "tran"), {})).toBeNull();
   }, 60_000);

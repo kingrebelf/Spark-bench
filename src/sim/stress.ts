@@ -68,6 +68,8 @@ export interface StressTrack {
   ratio: Float64Array;
   /** Averaged stress in its unit per sample. */
   avg: Float64Array;
+  /** Instantaneous stress in its unit per sample. */
+  raw: Float64Array;
 }
 
 function limitOf(c: ComponentInstance, def: ComponentDef, r: NonNullable<ComponentDef["ratings"]>[number]): number {
@@ -115,7 +117,7 @@ export function stressTracks(project: Project, result: SimResult, damage: Record
       const avg = result.analysis === "op" ? raw : ema(x, raw, tau, (damage[c.id] ?? []).flatMap((d) => (d.repairedAt != null ? [d.repairedAt] : [])));
       const ratio = new Float64Array(n);
       for (let i = 0; i < n; i++) ratio[i] = avg[i] / limit;
-      out.push({ componentId: c.id, ref: c.ref, kind: r.kind, limit, tau, ratio, avg });
+      out.push({ componentId: c.id, ref: c.ref, kind: r.kind, limit, tau, ratio, avg, raw });
     }
   }
   return out;
@@ -142,21 +144,33 @@ export function detectFailure(project: Project, result: SimResult, damage: Recor
     if (last && last.repairedAt == null) continue; // still open
     const t = firstExceed(x, tr.avg, tr.limit, from > -Infinity ? from + 1e-12 : -Infinity);
     if (t == null || (best && best.t <= t)) continue;
-    best = { componentId: tr.componentId, t, damage: { t, ...damageText(project, tr, t) } };
+    const i = Math.min(x.length - 1, Math.max(0, x.findIndex((v) => v >= t)));
+    best = { componentId: tr.componentId, t, damage: { t, ...damageText(project, tr, t, tr.raw[i]) } };
   }
   return best;
 }
 
-export function damageText(project: Project, tr: Pick<StressTrack, "componentId" | "ref" | "kind" | "limit" | "tau">, t: number): { message: string; fix: string } {
+/** Standard resistor power ratings in W. */
+const POWER_RATINGS = [0.125, 0.25, 0.5, 1, 2, 3, 5, 10, 25, 50];
+
+/**
+ * Plain-language damage message and fix. `value` is the stress at the failure time (instantaneous); the
+ * failure itself is decided on the average, which the message says.
+ */
+export function damageText(project: Project, tr: Pick<StressTrack, "componentId" | "ref" | "kind" | "limit" | "tau">, t: number, value?: number): { message: string; fix: string } {
   const c = project.schematic.components.find((x) => x.id === tr.componentId);
   const def = c && getPart(c.type);
   const u = UNIT[tr.kind];
-  const over = `${formatSI(tr.limit * 1, u, 3)}`;
-  const avgNote = `averaged over ${formatSI(tr.tau, "s")}`;
-  const message = `${tr.ref} ${VERB[tr.kind]} more than its ${tr.kind === "reverse-voltage" ? "reverse-voltage limit" : "rating"} of ${over} (${avgNote}) and failed at ${formatSI(t, "s", 4)}. It is modeled as an open circuit after the failure; real failures vary (parts can also short or degrade).`;
+  const rated = tr.kind === "reverse-voltage" ? `reverse limit ${formatSI(tr.limit, u, 3)}` : tr.kind === "current" ? `max ${formatSI(tr.limit, u, 3)}` : `rated ${formatSI(tr.limit, u, 3)}`;
+  const what = value != null && value > 0 ? `${VERB[tr.kind]} ${formatSI(value, u, 3)} (${rated})` : `went over its rating (${rated})`;
+  const message = `${tr.ref} ${what} and failed at ${formatSI(t, "s", 4)}, when its average over ${formatSI(tr.tau, "s")} passed the limit. It is modeled as an open circuit after that; real failures vary (parts can also short or degrade).`;
   let fix: string;
-  if (def?.id === "resistor") fix = `Use a resistor with a higher power rating, or a larger resistance so less power is dissipated (P = V²/R).`;
-  else if (def?.id === "led") fix = `Add a series resistor: R ≈ (supply − Vf) / 15 mA, e.g. about 470 Ω on 9 V.`;
+  if (def?.id === "resistor" && value) {
+    const r = parseSI((c!.props.value ?? "1k") as string | number);
+    const p = POWER_RATINGS.find((w) => w >= value * 1.5) ?? Math.ceil(value * 1.5);
+    fix = `Use a ≥ ${p} W resistor, or at least ${formatSI(r * value / tr.limit * 1.5, "Ω", 2)} so it dissipates under ${Math.round(100 / 1.5)} % of its rating (P = V²/R).`;
+  } else if (def?.id === "resistor") fix = `Use a resistor with a higher power rating, or a larger resistance so it dissipates less (P = V²/R).`;
+  else if (def?.id === "led") fix = `Add a series resistor: R ≈ (supply − Vf) / 15 mA, e.g. about 470 Ω on 9 V or 220 Ω on 5 V.`;
   else if (tr.kind === "current") fix = `Limit the current with a series resistor, or use a part rated for more current.`;
   else if (tr.kind === "reverse-voltage") fix = `Turn the electrolytic capacitor around (+ to the higher voltage) or use a non-polarized capacitor.`;
   else if (tr.kind === "voltage") fix = `Use a capacitor with a higher voltage rating (at least 1.5× the highest voltage it sees).`;
