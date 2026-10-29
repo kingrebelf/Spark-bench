@@ -3,7 +3,7 @@ import "../src/library";
 import { computeConnectivity } from "../src/core/connectivity";
 import { createProject } from "../src/core/project";
 import {
-  addWire, cleanupWires, copyItems, hitPin, hitTest, itemsInRect, mirrorItems, moveItems, nextRef, orthogonalize,
+  addWire, cleanupWires, copyItems, hitPin, hitTest, interactiveText, itemsInRect, mirrorItems, moveItems, nextRef, orthogonalize,
   pasteClip, rotateItems, routeAvoiding, routeOrthogonal, rubberBand, simplifyPolyline, type Schematic,
 } from "../src/editor/ops";
 import { keyOf } from "../src/core/geometry";
@@ -187,5 +187,13 @@ describe("copy / paste", () => {
   });
   it("nextRef fills gaps", () => {
     expect(nextRef("R", [{ ref: "R1" }, { ref: "R3" }])).toBe("R2");
+  });
+});
+
+describe("interactive part text", () => {
+  it("names switch, button and wiper states", () => {
+    expect([interactiveText("toggle", 1), interactiveText("toggle", 0)]).toEqual(["closed", "open"]);
+    expect([interactiveText("momentary", 1), interactiveText("momentary", 0)]).toEqual(["pressed", "released"]);
+    expect(interactiveText("slider", 34.6)).toBe("wiper 35%");
   });
 });

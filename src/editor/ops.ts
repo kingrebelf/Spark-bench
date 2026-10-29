@@ -540,3 +540,10 @@ export function describeItems(s: Schematic, ids: Iterable<string>): string {
 export function onAnyWire(s: Schematic, p: Point): boolean {
   return s.wires.some((w) => w.points.some((q, i) => i > 0 && onSegment(p, w.points[i - 1], q)));
 }
+
+/** Friendly text for an interactive part's state: switch closed/open, button pressed/released, pot wiper %. */
+export function interactiveText(kind: "toggle" | "momentary" | "slider", v: number): string {
+  if (kind === "toggle") return v >= 0.5 ? "closed" : "open";
+  if (kind === "momentary") return v >= 0.5 ? "pressed" : "released";
+  return `wiper ${Math.round(v)}%`;
+}

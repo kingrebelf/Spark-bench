@@ -8,15 +8,15 @@ import { getPart } from "../core/library";
 import { useProject } from "../core/store";
 import type { ComponentDef, ComponentInstance, NetLabel, Point, Wire } from "../core/types";
 import { formatSI, parseSI } from "../core/units";
-import { useSim } from "../sim/store";
+import { usePlayback, useSim } from "../sim/store";
 import * as A from "./actions";
-import { componentBounds, hitPin, hitTest, hitWire, itemsBounds, itemsInRect, labelBounds, moveItems, pinPoints, routeAvoiding, type Rect, type Schematic } from "./ops";
+import { componentBounds, hitPin, interactiveText, hitTest, hitWire, itemsBounds, itemsInRect, labelBounds, moveItems, pinPoints, routeAvoiding, type Rect, type Schematic } from "./ops";
 import { SymbolShapes } from "./SymbolView";
 import { PART_MIME, useEditor, usePointer, type Hover, type View } from "./store";
 import { HelpOverlay, StatusBar } from "./StatusBar";
 import "./editor.css";
 import { SimCanvasOverlay } from "../sim/CanvasOverlay";
-import { liveInput } from "../sim/interact";
+import { liveEnabled, liveInput, liveValue } from "../sim/interact";
 
 export { nextRef } from "./ops";
 
@@ -598,7 +598,9 @@ const PartView = memo(function PartView({ inst: c, def, selected, open }: { inst
       </g>
       {lines.length > 0 && (
         <text x={tx} y={ty} fontSize={1.1} textAnchor={tall || corner ? "start" : "middle"} dominantBaseline="central" className="part-text">
-          {lines.map((t, i) => <tspan key={i} x={tx} dy={i === 0 ? 0 : 1.3} className={i === 0 ? "ref" : "val"}>{t}</tspan>)}
+          {lines.map((t, i) => (def.interactive && def.displayProps?.[i - 1] === def.interactive.prop
+            ? <LiveValue key={i} inst={c} def={def} x={tx} />
+            : <tspan key={i} x={tx} dy={i === 0 ? 0 : 1.3} className={i === 0 ? "ref" : "val"}>{t}</tspan>))}
         </text>
       )}
       {open && open.split(",").map((pid) => {
@@ -608,6 +610,16 @@ const PartView = memo(function PartView({ inst: c, def, selected, open }: { inst
     </g>
   );
 });
+
+/** State of a switch / push button / pot in words; during a live run, the state at the playback time (as drawn by the sim overlay). */
+function LiveValue({ inst, def, x }: { inst: ComponentInstance; def: ComponentDef; x: number }) {
+  useSim((s) => s.session);
+  useSim((s) => s.result);
+  useProject((s) => s.project);
+  const t = usePlayback((s) => s.t);
+  const v = liveValue(inst, def, liveEnabled() ? t : null);
+  return <tspan x={x} dy={1.3} className="val">{interactiveText(def.interactive!.kind, v)}</tspan>;
+}
 
 const LabelView = memo(function LabelView({ label: l, selected }: { label: NetLabel; selected: boolean }) {
   const b = labelBounds(l);
