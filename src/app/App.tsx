@@ -5,12 +5,14 @@ import { LibraryPanel } from "../editor/LibraryPanel";
 import { PropertiesPanel } from "../editor/PropertiesPanel";
 import { useEditor } from "../editor/store";
 import { SimPanel } from "../sim/SimPanel";
+import { AssistantPanel } from "../ai/AssistantPanel";
 import { checkRecovery, newProject, openProject, saveProject, startRecoveryAutosave } from "./fileActions";
 import { useApp } from "./store";
 
 // Right-side panels. Feature modules add entries here (e.g. AI assistant, KiCad).
 const RIGHT_PANELS: { id: string; label: string; render: () => React.ReactNode }[] = [
   { id: "properties", label: "Properties", render: () => <PropertiesPanel /> },
+  { id: "assistant", label: "Assistant", render: () => <AssistantPanel /> },
 ];
 
 export function App() {

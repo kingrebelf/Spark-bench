@@ -1,9 +1,11 @@
 import { app, BrowserWindow, shell } from "electron";
 import path from "node:path";
 import { registerFileIpc } from "./ipc/files";
+import { registerAiIpc } from "./ipc/ai";
 
 // Each feature module registers its own IPC handlers here (files, kicad, ai, ...).
 registerFileIpc();
+registerAiIpc();
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 

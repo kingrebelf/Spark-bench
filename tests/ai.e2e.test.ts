@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { engine, divider } from "./helpers";
 import { createProject } from "../src/core/project";
 import { checkProposal, parseAiResponse, type Proposal } from "../src/ai/proposal";
@@ -31,6 +33,14 @@ describe("end to end: canned model reply -> placed circuit -> checks -> ngspice"
     expect(f3.measured!).toBeGreaterThan(1500);
     expect(f3.measured!).toBeLessThan(1700); // 1/(2π·1k·100n) = 1591.5 Hz
     expect(s.expectations.every((e) => e.pass)).toBe(true);
+    expect(r.stage).toBe("sim-match");
+  }, 60_000);
+
+  it("a real Codex CLI reply (recorded with the actual schema) lays out, passes checks and matches in ngspice", async () => {
+    const text = readFileSync(path.join(__dirname, "aiCodexReply.json"), "utf8");
+    const r = await pipeline(text);
+    expect(r.checks.ok).toBe(true);
+    expect(r.sims[0].result.ok).toBe(true);
     expect(r.stage).toBe("sim-match");
   }, 60_000);
 
