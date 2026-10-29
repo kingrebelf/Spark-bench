@@ -165,7 +165,7 @@ function bjtAmp(): Example {
   s.label("in", s.pin(vin, "1")); s.label("out", s.pin(rl, "1")); s.label("c", s.pin(q, "C"));
   s.gnd(s.pin(vin, "2")); s.gnd(s.pin(r2, "2")); s.gnd(s.pin(re, "2")); s.gnd(s.pin(rl, "2")); s.gnd(s.pin(vcc, "2"));
   s.probeV("in", "Vin"); s.probeV("out", "Vout");
-  return { file: "bjt-common-emitter", project: s.project, expected: "V(out) is an inverted sine of ≈ 85 mV peak (gain ≈ −4.3); collector sits near 7 V. AC analysis: |gain| ≈ 4.3 in the midband." };
+  return { file: "bjt-common-emitter", project: s.project, expected: "V(out) is an inverted sine of ≈ 85 mV peak (gain ≈ −4.3); the collector sits near 5.7 V. AC analysis: |gain| ≈ 4.3 in the midband." };
 }
 
 function opampInverting(): Example {
