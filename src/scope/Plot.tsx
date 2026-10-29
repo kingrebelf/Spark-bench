@@ -41,6 +41,8 @@ interface Props {
   pendingFrom?: number | null;
   /** Follow the playhead with a window of this x span when the data is longer (until you zoom). */
   follow?: number | null;
+  /** Zoom and cursors reset when this changes (default: when the x data changes). Live re-runs keep them. */
+  resetKey?: unknown;
   onSeek?: (x: number) => void;
   /** Show the min/max/avg/RMS/pk-pk/frequency table (time-domain plots). */
   measurements?: boolean;
@@ -61,7 +63,7 @@ function cssVar(el: Element, name: string, fallback: string) {
   return getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 }
 
-export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, pendingFrom, follow, onSeek, measurements, height, handle }: Props) {
+export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, pendingFrom, follow, resetKey, onSeek, measurements, height, handle }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
@@ -75,7 +77,8 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
 
   // Reset zoom when the data set changes (a new run).
   const firstX = series[0]?.x;
-  useEffect(() => { setView({ x: null, y: {} }); setCursors({ a: null, b: null }); }, [firstX]);
+  const reset = resetKey === undefined ? firstX : resetKey;
+  useEffect(() => { setView({ x: null, y: {} }); setCursors({ a: null, b: null }); }, [reset]);
 
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;

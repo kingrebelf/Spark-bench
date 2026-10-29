@@ -114,7 +114,8 @@ function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: (
   const [, force] = useState(0);
   useEffect(() => { if (status !== "running") return; const id = setInterval(() => force((n) => n + 1), 250); return () => clearInterval(id); }, [status]);
   const a = project.simulation.analysis;
-  const timeVarying = useMemo(() => sourceFrequencies(project).length > 0, [project]);
+  // Periodic sources, or a 555 (its op result is only the power-up state).
+  const timeVarying = useMemo(() => sourceFrequencies(project).length > 0 || project.schematic.components.some((c) => c.type === "timer555"), [project]);
   const liveParts = useMemo(() => hasLiveParts(project), [project]);
   const operable = useMemo(() => project.schematic.components.some((c) => getPart(c.type)?.interactive), [project]);
   const label = status === "running" ? `Simulating… ${((Date.now() - (startedAt ?? Date.now())) / 1000).toFixed(1)} s`
@@ -431,6 +432,7 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
   const rate = usePlayback((s) => s.rate);
   const valid = useValidUntil();
   const live = useSim((s) => !!s.session?.live);
+  const basis = useSim((s) => s.basis); // replaced only by a fresh Run/Live, not by live re-runs
   const x = result.x!.real;
   const t1 = usePlayback((s) => s.t1);
   useEffect(() => { if (t1 !== x[x.length - 1]) usePlayback.getState().adopt(result); }, [result, x, t1]);
@@ -443,7 +445,7 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
     <>
       <PlaybackBar />
       <Plot handle={plotRef} series={series} panes={panes} xUnit="s" xLabel="time" playhead={t} onSeek={(v) => seek(v)} measurements height={height}
-        hideAfter={displayLimit(t, valid)} pendingFrom={valid} follow={live ? 10 * rate : null} />
+        hideAfter={displayLimit(t, valid)} pendingFrom={valid} follow={live ? 10 * rate : null} resetKey={basis} />
     </>
   );
 }
