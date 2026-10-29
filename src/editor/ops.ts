@@ -413,9 +413,9 @@ function reattach(before: Schematic, after: Schematic, ids: Set<string>, lookup:
     const to = moves.get(keyOf(l.position));
     return to ? { ...l, position: { ...to } } : l;
   });
-  // Pins that touched a pin that stayed put (direct pin-to-pin contact) get a new wire so they stay joined.
+  // Moved pins or wire ends that touched a pin that stayed put get a new stub wire so they stay joined.
   const stayed = new Set(pinPoints({ ...after, components: after.components.filter((c) => !ids.has(c.id)) }, lookup).map(keyOf));
-  const wireEnds = new Set(before.wires.flatMap((w) => [keyOf(w.points[0]), keyOf(w.points[w.points.length - 1])]));
+  const wireEnds = new Set(before.wires.filter((w) => !ids.has(w.id)).flatMap((w) => [keyOf(w.points[0]), keyOf(w.points[w.points.length - 1])]));
   for (const [k, to] of moves) {
     if (!stayed.has(k) || wireEnds.has(k)) continue;
     const [x, y] = k.split(",").map(Number);

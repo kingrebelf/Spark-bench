@@ -115,6 +115,14 @@ describe("rubber-banding", () => {
     expect(next.wires).toHaveLength(1);
     expect(netSignature(next)).toEqual(before);
   });
+  it("dragging a wire on its own leaves stubs back to its pins", () => {
+    const { b } = divider();
+    const s = b.project.schematic;
+    const before = netSignature(s);
+    const w = s.wires[1]; // R1:2 -> R2:1, vertical
+    const next = moveItems(s, new Set([w.id]), 3, 0);
+    expect(netSignature(next)).toEqual(before);
+  });
   it("mirror is a screen-horizontal flip for rotated parts", () => {
     const b = new Builder();
     const D = b.place("diode", "D1", 0, 0, {}, 90); // A at (0,-3), K at (0,3) when rotated 90

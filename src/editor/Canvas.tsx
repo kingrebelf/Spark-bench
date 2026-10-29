@@ -16,6 +16,8 @@ import { PART_MIME, useEditor, usePointer, type Hover, type View } from "./store
 import { HelpOverlay, StatusBar } from "./StatusBar";
 import "./editor.css";
 
+export { nextRef } from "./ops";
+
 /** Pixels per grid unit at 100% zoom. */
 export const PX = 12;
 const MIN_ZOOM = 0.1, MAX_ZOOM = 8;
@@ -45,7 +47,6 @@ export const Canvas = memo(function Canvas() {
   const tool = useEditor((s) => s.tool);
   const project = useProject((s) => s.project);
   const selection = useProject((s) => s.selection);
-  const filePath = useProject((s) => s.filePath);
   const result = useSim((s) => s.result);
   const schematic = project.schematic;
   // Connectivity is O(wires × points): it lags behind edits (deferred) and is frozen while
@@ -57,7 +58,7 @@ export const Canvas = memo(function Canvas() {
   const conn = useMemo(() => A.connectivityOf({ ...project, schematic: deferredSchematic }), [deferredSchematic]); // eslint-disable-line react-hooks/exhaustive-deps
   const [size, setSize] = useState({ w: 900, h: 600 });
   const [labelEdit, setLabelEdit] = useState<{ id?: string; at: Point; value: string } | null>(null);
-  const [flash, setFlash] = useState(0);
+  const [flash, setFlash] = useState({ n: 0, on: false });
   const gesture = useRef<Gesture | null>(null);
   const space = useRef(false);
   const pointerInside = useRef(false);
@@ -82,10 +83,15 @@ export const Canvas = memo(function Canvas() {
     useEditor.getState().setView(b ? fitView(b, w, h) : { zoom: 1.4, x: -w / 2 / (PX * 1.4), y: -h / 2 / (PX * 1.4) });
   }, []);
 
-  // Fit when a project is opened/created (not on every edit) and when asked (F / Home / status bar).
+  // Fit on first show, when a project is opened/created (a load: new project, empty history),
+  // and when asked (F / Home / status bar). Saving or editing never moves the view.
   const fitToken = useEditor((s) => s.fitToken);
-  const openedKey = `${project.meta.created}|${filePath ?? ""}`;
-  useEffect(() => { if (size.w > 0) fit(); }, [openedKey, fitToken, fit, size.w > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (size.w > 0) fit(); }, [fitToken, fit, size.w > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => useProject.subscribe((s, prev) => {
+    const loaded = s.project !== prev.project && !s.past.length && !s.future.length
+      && (s.project.meta.created !== prev.project.meta.created || s.filePath !== prev.filePath);
+    if (loaded) setTimeout(fit, 0);
+  }), [fit]);
 
   // Selections made outside the canvas (diagnostics, AI) are panned into view and flashed.
   useEffect(() => useProject.subscribe((s, prev) => {
@@ -101,8 +107,13 @@ export const Canvas = memo(function Canvas() {
       if (b.w + 8 > vis.w || b.h + 8 > vis.h) useEditor.getState().setView(fitView(b, w, h));
       else useEditor.getState().setView({ ...v, x: b.x + b.w / 2 - vis.w / 2, y: b.y + b.h / 2 - vis.h / 2 });
     }
-    setFlash((n) => n + 1);
+    setFlash((f) => ({ n: f.n + 1, on: true }));
   }), []);
+  useEffect(() => {
+    if (!flash.on) return;
+    const t = setTimeout(() => setFlash((f) => ({ ...f, on: false })), 2000);
+    return () => clearTimeout(t);
+  }, [flash]);
 
   // ------------------------------------------------------------ coordinates and hits
   const toGrid = (e: { clientX: number; clientY: number }): Point => {
@@ -146,6 +157,7 @@ export const Canvas = memo(function Canvas() {
   };
 
   // ------------------------------------------------------------ pointer handlers
+  const capture = (e: React.PointerEvent) => { try { svgRef.current!.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ } };
   const onPointerDown = (e: React.PointerEvent) => {
     wrapRef.current?.focus({ preventScroll: true });
     if (labelEdit) return;
@@ -153,13 +165,13 @@ export const Canvas = memo(function Canvas() {
     const ed = useEditor.getState();
     if (e.button === 1 || (e.button === 0 && space.current)) {
       e.preventDefault();
-      svgRef.current!.setPointerCapture(e.pointerId);
+      capture(e);
       gesture.current = { kind: "pan", client: { x: e.clientX, y: e.clientY }, origin: ed.view };
       return;
     }
     if (e.button !== 0) return;
     if (ed.floating) { A.moveFloating(g); A.dropFloating(); return; }
-    svgRef.current!.setPointerCapture(e.pointerId);
+    capture(e);
     const t = ed.tool;
     if (typeof t === "object") { A.placePart(t.place, g, ed.placeRotation, ed.placeMirror); return; }
     if (t === "wire") { wireClick(snapTarget(p)); gesture.current = { kind: "wire-drag", client: { x: e.clientX, y: e.clientY } }; return; }
@@ -281,7 +293,8 @@ export const Canvas = memo(function Canvas() {
     }
   };
 
-  const onWheel = (e: React.WheelEvent) => {
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault(); // also stops Ctrl+wheel / pinch from zooming the whole window
     const v = useEditor.getState().view;
     if (e.shiftKey) { useEditor.getState().setView({ ...v, x: v.x + e.deltaY / (PX * v.zoom) }); return; }
     const p = toGrid(e);
@@ -325,17 +338,21 @@ export const Canvas = memo(function Canvas() {
       const active = document.activeElement;
       const inEditor = !!wrapRef.current?.contains(active) || (pointerInside.current && !editable(active));
       if (e.key === " " && e.type === "keyup") { space.current = false; wrapRef.current?.classList.remove("panning"); return; }
-      if (e.type !== "keydown" || !inEditor) return;
-      const ed = useEditor.getState(), ps = usePointer.getState();
       const ctrl = e.ctrlKey || e.metaKey;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      // Undo/redo work wherever focus is (except text fields, which keep their own undo).
+      if (e.type === "keydown" && ctrl && (k === "z" || k === "y")) {
+        e.preventDefault();
+        if (k === "y" || e.shiftKey) useProject.getState().redo(); else useProject.getState().undo();
+        return;
+      }
+      if (e.type !== "keydown" || !inEditor) return;
+      const ed = useEditor.getState(), ps = usePointer.getState();
       const placing = typeof ed.tool === "object" || !!ps.dropPart;
       const handled = () => { e.preventDefault(); e.stopPropagation(); };
       if (e.key === " ") { handled(); space.current = true; wrapRef.current?.classList.add("panning"); return; }
       if (ctrl) {
-        if (k === "z") { handled(); e.shiftKey ? useProject.getState().redo() : useProject.getState().undo(); }
-        else if (k === "y") { handled(); useProject.getState().redo(); }
-        else if (k === "a") { handled(); A.selectAll(); }
+        if (k === "a") { handled(); A.selectAll(); }
         else if (k === "c") { handled(); A.copySelection(); }
         else if (k === "x") { handled(); A.cutSelection(); }
         else if (k === "v") { handled(); A.paste(); }
@@ -398,6 +415,15 @@ export const Canvas = memo(function Canvas() {
     useEditor.getState().setView({ zoom, x: cx - w / 2 / (PX * zoom), y: cy - h / 2 / (PX * zoom) });
   };
 
+  const wheelRef = useRef(onWheel);
+  wheelRef.current = onWheel;
+  useEffect(() => {
+    const el = svgRef.current!;
+    const h = (e: WheelEvent) => wheelRef.current(e);
+    el.addEventListener("wheel", h, { passive: false });
+    return () => el.removeEventListener("wheel", h);
+  }, []);
+
   // Leaving wire mode by any route (toolbar, Esc) drops the in-progress wire.
   useEffect(() => { if (tool !== "wire") { usePointer.getState().set({ wire: [] }); wireFromSelect.current = false; } }, [tool]);
 
@@ -420,11 +446,11 @@ export const Canvas = memo(function Canvas() {
       <svg ref={svgRef} className="sb-canvas" role="application" aria-label="Schematic canvas. Press ? for keyboard shortcuts."
         style={{ ["--sym-w" as string]: `${symW}px`, ["--wire-w" as string]: `${wireW}px` }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { gesture.current = null; setDragging(false); usePointer.getState().set({ marquee: null }); }}
-        onDoubleClick={onDoubleClick} onWheel={onWheel} onContextMenu={onContextMenu}
+        onDoubleClick={onDoubleClick} onContextMenu={onContextMenu}
         onDragOver={onDragOver} onDrop={onDrop} onDragLeave={() => usePointer.getState().set({ cursor: null })}>
         <Grid view={view} w={size.w} h={size.h} />
         <g transform={`scale(${scale}) translate(${-view.x},${-view.y})`}>
-          <Scene schematic={schematic} selSet={selSet} conn={conn} flash={flash} />
+          <Scene schematic={schematic} selSet={selSet} conn={conn} flash={flash.on ? flash.n : 0} />
           <NetHighlight schematic={schematic} conn={conn} />
           <OpAnnotations conn={conn} opVolts={opVolts} />
           <Overlay schematic={schematic} />

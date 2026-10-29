@@ -102,7 +102,7 @@ export const LibraryPanel = memo(function LibraryPanel() {
     else if (e.key === "Home") { e.preventDefault(); moveFocus(0); }
     else if (e.key === "End") { e.preventDefault(); moveFocus(flat.length - 1); }
     else if (e.key === "Escape") { e.preventDefault(); if (typeof tool === "object") setTool("select"); else searchRef.current?.focus(); }
-    else if (e.key.length === 1 && /\S/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    else if (e.key.length === 1 && /\S/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey && !(typeof tool === "object" && /^[rx]$/i.test(e.key))) {
       // type-to-search from the list
       e.preventDefault(); searchRef.current?.focus(); setQ((s) => s + e.key);
     }
@@ -148,7 +148,11 @@ export const LibraryPanel = memo(function LibraryPanel() {
                     title={`${p.description}\n\nClick to place, or drag onto the canvas.`}
                     onFocus={() => { setFocusId(p.id); setFocusSec(sec.key); }}
                     onMouseEnter={() => { setFocusId(p.id); setFocusSec(sec.key); }}
-                    onClick={() => activate(p)}
+                    onClick={(e) => {
+                      activate(p);
+                      // after a mouse click, keys like R / X / Esc should reach the canvas, not the list
+                      if (e.detail > 0) document.querySelector<HTMLElement>(".sb-editor")?.focus({ preventScroll: true });
+                    }}
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData(PART_MIME, p.id);
