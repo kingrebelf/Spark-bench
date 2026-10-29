@@ -144,6 +144,19 @@ export function parseModelList(text: string): string[] {
 
 // ------------------------------------------------------------------ dispatch (HTTP providers)
 
+/** Node's fetch reports every transport failure as "fetch failed"; the real reason is in `cause`. */
+export function networkMessage(e: unknown, who: string, local: boolean): string {
+  const cause = (e as { cause?: { code?: string; message?: string } })?.cause;
+  const code = cause?.code ?? "";
+  if (code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT") {
+    return `${who} did not answer within 5 minutes (the HTTP client's limit), so the request was abandoned. Retry, lower the effort, or ask for a smaller change.`;
+  }
+  if (code === "ECONNREFUSED") return `Could not connect to ${who} (connection refused).${local ? " Is the server running and is a model loaded?" : ""}`;
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return `Could not resolve the host for ${who}. Check your internet connection${local ? " and the base URL" : ""}.`;
+  const detail = [cause?.code, cause?.message].filter(Boolean).join(": ");
+  return `Could not reach ${who}: ${(e as Error)?.message ?? String(e)}${detail ? ` (${detail})` : ""}.${local ? " Is the server running?" : " Check your internet connection."}`;
+}
+
 export async function completeHttp(
   settings: AiSettings, provider: Exclude<ProviderId, "codex">, req: CompletionRequest, apiKey: string | null,
   fetchImpl: FetchLike, signal?: AbortSignal,
@@ -170,7 +183,7 @@ export async function completeHttp(
     res = await fetchImpl(built.url, { ...built.init, signal });
   } catch (e) {
     if ((e as Error).name === "AbortError") return { ok: false, error: { kind: "cancelled", message: "Request cancelled." } };
-    return { ok: false, error: { kind: "network", message: `Could not reach ${who}: ${(e as Error).message}.${provider === "compatible" ? " Is the server running?" : " Check your internet connection."}` } };
+    return { ok: false, error: { kind: "network", message: networkMessage(e, who, provider === "compatible") } };
   }
   const body = await res.text();
   const parsed = provider === "anthropic" ? parseAnthropicResponse(res.status, body) : parseOpenAiResponse(res.status, body, who);

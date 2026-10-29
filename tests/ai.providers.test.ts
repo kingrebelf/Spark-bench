@@ -59,6 +59,14 @@ describe("Anthropic provider", () => {
     const r = await completeHttp(settings(), "anthropic", req, "k", f);
     expect(!r.ok && r.error.kind).toBe("network");
   });
+  it("network errors name the real cause hidden in fetch's `cause`", async () => {
+    const fail = (code: string): FetchLike => async () => { throw Object.assign(new TypeError("fetch failed"), { cause: { code, message: code } }); };
+    const s = settings({ compatible: { baseUrl: "http://localhost:1234/v1", model: "m" } });
+    let r = await completeHttp(s, "compatible", req, null, fail("ECONNREFUSED"));
+    expect(!r.ok && r.error.message).toMatch(/connection refused.*Is the server running/);
+    r = await completeHttp(settings(), "anthropic", req, "k", fail("UND_ERR_HEADERS_TIMEOUT"));
+    expect(!r.ok && r.error.message).toMatch(/did not answer within 5 minutes/);
+  });
 });
 
 describe("OpenAI and OpenAI-compatible providers", () => {

@@ -152,6 +152,13 @@ error handling with a mock `fetch`, Codex arguments and error messages, key vaul
 `safeStorage`), and `tests/ai.e2e.test.ts` (canned and recorded-Codex replies → layout → checks → ngspice,
 mismatch and unmeasurable expectations, diffs including a silently disconnected pin).
 
-Not verified against the live APIs: Anthropic and OpenAI completions (no API keys on this machine). A request
-with a dummy key reached `api.anthropic.com` and got the expected 401, shown in the panel as
-"Anthropic API error 401 (authentication_error): invalid x-api-key".
+Not verified against the live services:
+- Anthropic and OpenAI completions (no API keys on this machine). A request with a dummy key reached
+  `api.anthropic.com` and got the expected 401, shown in the panel as
+  "Anthropic API error 401 (authentication_error): invalid x-api-key".
+- OpenAI-compatible completions: only model listing (`/v1/models` on LM Studio) was verified live; no local
+  model was loaded, and loading one was avoided because other tools use that LM Studio instance.
+
+Known limit: requests are non-streaming, and Electron's built-in `fetch` (undici) gives up if no response
+headers arrive within 5 minutes. A very long Anthropic request at high effort could hit that; it is reported
+as "did not answer within 5 minutes", never as a partial result.
