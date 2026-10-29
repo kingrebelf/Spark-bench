@@ -15,7 +15,11 @@ export function verifyConnectivity(ex: Pick<SchExport, "expectedNets" | "parts">
   const board = parseKicadNetlist(boardNetlist);
   const spice = spiceNetlist ? parseSpiceNetlist(spiceNetlist) : null;
   const simOnly = ex.parts.filter((p) => p.simOnly).map((p) => ({ ref: p.ref, ...p.simOnly! }));
-  const actual = mergedKicadPartition(board, spice, simOnly);
+  const mapped = new Set(ex.expectedNets.flat());
+  // KiCad pins the SparkBench part does not model (e.g. a 555's CONTROL pin) are fine when left unconnected;
+  // if one is wired to anything it stays in its group and shows up as a difference.
+  const all = mergedKicadPartition(board, spice, simOnly);
+  const actual = all.filter((g) => !(g.length === 1 && !mapped.has(g[0])));
   const cmp = comparePartitions(ex.expectedNets, actual);
   const checkedPins = ex.expectedNets.reduce((n, g) => n + g.length, 0);
   const summary = cmp.equal

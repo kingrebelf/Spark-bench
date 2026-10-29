@@ -165,3 +165,21 @@ describe.skipIf(!kicad)("multi-unit symbols", () => {
     expect(strip(await fs.readFile(sch, "utf8"))).toBe(strip(ex.text));
   });
 });
+
+import { allParts } from "../src/core/library";
+describe.skipIf(!kicad)("every library part exports with matching connectivity", () => {
+  it("all registered parts (each pin labelled) match KiCad's netlist", async () => {
+    const b = new Builder();
+    const parts = allParts().filter((d) => d.role !== "netlabel" && d.kicad && !d.id.startsWith("test_"));
+    let x = 0;
+    for (const d of parts) {
+      const c = b.place(d.id, `${d.refPrefix.replace(/^#/, "")}${x / 30 + 1}`, x, 0);
+      if (d.role !== "ground") for (const p of d.pins) b.label(`n${x}_${p.id.replace(/[^A-Za-z0-9]/g, "")}`, b.pin(c, p.id));
+      x += 30;
+    }
+    const { cmp, ex } = await exportAndCheck(b.project, "allparts");
+    const errors = ex.diagnostics.filter((d) => d.severity === "error");
+    expect(errors.map((e) => e.message)).toEqual([]);
+    expect(cmp).toEqual({ equal: true, onlyInSparkbench: [], onlyInKicad: [] });
+  }, 120000);
+});
