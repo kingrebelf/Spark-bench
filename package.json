@@ -14,7 +14,7 @@
     "typecheck": "tsc -p ."
   },
   "author": "",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "dependencies": {
     "eecircuit-engine": "^1.9.0",
@@ -33,6 +33,7 @@
     "cross-env": "^10.1.0",
     "electron": "^45.1.0",
     "esbuild": "^0.28.2",
+    "playwright": "^1.64.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5",
