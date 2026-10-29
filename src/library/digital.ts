@@ -196,22 +196,22 @@ const clockMark = (x: number, y: number): Shape => poly([[x, y - 0.6], [x + 0.9,
 
 export const dFlipFlop: ComponentDef = {
   id: "dff", name: "D Flip-Flop", category: "Digital", refPrefix: "U",
-  description: "Rising-edge D flip-flop with active-low preset and clear (74x74 style). On each rising CLK edge Q takes the value of D. Tie ~PRE and ~CLR to VCC when unused. Starts with Q = 0.",
+  description: "Rising-edge D flip-flop with active-low preset and clear (74x74 style). On each rising CLK edge Q takes the value of D. Tie ~PRE and ~CLR to VCC when unused. Starts with Q = 0. As in KiCad's symbol, VCC/GND sit directly above/below ~PRE/~CLR: wire those two pins from the side.",
   keywords: ["flip flop", "flipflop", "register", "latch", "7474", "d type"],
   pins: [
-    { id: "D", name: "D", x: -10, y: -4 }, { id: "C", name: "CLK", x: -10, y: 4 },
-    { id: "Q", name: "Q", x: 10, y: -4 }, { id: "QN", name: "~Q", x: 10, y: 4 },
-    { id: "PRE", name: "~PRE", x: -2, y: -10 }, { id: "CLR", name: "~CLR", x: -2, y: 10 },
-    { id: "VCC", name: "VCC", x: 2, y: -10 }, { id: "GND", name: "GND", x: 2, y: 10 },
+    { id: "D", name: "D", x: -6, y: -2 }, { id: "C", name: "CLK", x: -6, y: 0 },
+    { id: "Q", name: "Q", x: 6, y: -2 }, { id: "QN", name: "~Q", x: 6, y: 2 },
+    { id: "PRE", name: "~PRE", x: 0, y: -6 }, { id: "CLR", name: "~CLR", x: 0, y: 6 },
+    { id: "VCC", name: "VCC", x: 0, y: -8 }, { id: "GND", name: "GND", x: 0, y: 8 },
   ],
   symbol: [
-    rect(-6, -7, 12, 14),
-    hlead(-10, -6, -4), hlead(-10, -6, 4), hlead(6, 10, -4), hlead(6, 10, 4),
-    vlead(-10, -7, -2), vlead(7, 10, -2), vlead(-10, -7, 2), vlead(7, 10, 2),
-    boxLabel(-5.4, -4, "D", "start"), clockMark(-6, 4), boxLabel(-4.6, 4, "C", "start"),
-    boxLabel(5.4, -4, "Q", "end"), boxLabel(5.4, 4, "~Q", "end"),
-    boxLabel(-2, -6, "~PRE", "middle"), boxLabel(-2, 6, "~CLR", "middle"),
-    text(2.4, -9, "VCC", 0.7, "start"), text(2.4, 9, "GND", 0.7, "start"),
+    rect(-4, -4, 8, 8),
+    hlead(-6, -4, -2), hlead(-6, -4, 0), hlead(4, 6, -2), hlead(4, 6, 2),
+    vlead(-6, -4, 0), vlead(4, 6, 0), vlead(-8, -7.2, 0), line(-0.5, -7.2, 0.5, -7.2), vlead(7.2, 8, 0), line(-0.5, 7.2, 0.5, 7.2),
+    boxLabel(-3.6, -2, "D", "start"), clockMark(-4, 0),
+    boxLabel(3.6, -2, "Q", "end"), boxLabel(3.6, 2, "~Q", "end"),
+    boxLabel(0, -3.2, "~S", "middle"), boxLabel(0, 3.2, "~R", "middle"),
+    text(0.8, -7.6, "VCC", 0.7, "start"), text(0.8, 7.6, "GND", 0.7, "start"),
   ],
   props: [modelProp("td", "Propagation delay", "15n", "s", "Clock edge to output 50 % crossing."), delayProps[1]],
   provenance: "behavioral",
@@ -219,7 +219,7 @@ export const dFlipFlop: ComponentDef = {
   analyses: { ac: false },
   dcPaths: dc(["D", "C", "PRE", "CLR"], ["Q", "QN"]),
   spice: (c) => instance(c, "SB_DFF", DFF_SUBCKT, ["D", "C", "Q", "QN", "PRE", "CLR", "VCC", "GND"]),
-  kicad: { symbol: "74xGxx:74AUP1G74", footprint: "Package_SO:VSSOP-8_2.3x2mm_P0.5mm", pinMap: { C: "1", D: "2", QN: "3", GND: "4", Q: "5", CLR: "6", PRE: "7", VCC: "8" } },
+  kicad: { symbol: "74xx:74HC74", footprint: "Package_DIP:DIP-14_W7.62mm", pinMap: { CLR: "1", D: "2", C: "3", PRE: "4", Q: "5", QN: "6", GND: "7", VCC: "14" }, unit: 1, extraUnits: [3] },
 };
 
 const JK_SUBCKT = (() => {
@@ -237,7 +237,7 @@ const JK_SUBCKT = (() => {
 
 export const jkFlipFlop: ComponentDef = {
   id: "jkff", name: "JK Flip-Flop", category: "Digital", refPrefix: "U",
-  description: "Falling-edge JK flip-flop with active-low clear (74x107 style). At each falling CLK edge: J=K=0 hold, J=1 set, K=1 reset, J=K=1 toggle (use it as a T flip-flop). Tie ~R to VCC when unused. Starts with Q = 0.",
+  description: "Falling-edge JK flip-flop with active-low clear (74x107 style). At each falling CLK edge: J=K=0 hold, J=1 set, K=1 reset, J=K=1 toggle (use it as a T flip-flop). Tie ~R to VCC when unused. Starts with Q = 0. As in KiCad's symbol, GND sits directly below ~R: wire ~R from the side.",
   keywords: ["flip flop", "jk", "toggle", "t flip flop", "74107", "divider"],
   pins: [
     { id: "J", name: "J", x: -6, y: -2 }, { id: "C", name: "CLK", x: -6, y: 0 }, { id: "K", name: "K", x: -6, y: 2 },

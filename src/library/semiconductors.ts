@@ -44,7 +44,7 @@ export const diodeRectifier: ComponentDef = {
   symbol: diodeBody(),
   props: [],
   provenance: "generic",
-  accuracyNote: "Parameters in the style of widely circulated 1N4007 models (Is≈7n, N≈1.8, Rs≈34m, BV=1000); not verified against a manufacturer file. Reverse recovery is approximate." + importNote,
+  accuracyNote: "Typical 1N400x-class values in the style of common public models (Is≈7n, N≈1.8, Rs≈34m, BV=1000); not checked against a manufacturer file. Reverse recovery is approximate." + importNote,
   spice: (c) => diodeSpice(c, "D_SB_RECT", () => ".model D_SB_RECT D(Is=7.03n Rs=0.0341 N=1.81 Cjo=10p M=0.33 Vj=0.7 tt=4u BV=1000 IBV=5u)"),
   kicad: { symbol: "Device:D", footprint: "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", pinMap: diodeMap },
 };
@@ -171,7 +171,7 @@ function namedBjt(part: string, type: "NPN" | "PNP", card: string, desc: string,
     symbol: type === "NPN" ? npnSymbol : pnpSymbol,
     props: [],
     provenance: "generic",
-    accuracyNote: `${note} Labeled "-like" because SparkBench has not verified these numbers against the manufacturer's file; import the vendor .model for guaranteed fidelity.`,
+    accuracyNote: `${note} Not checked against a manufacturer's file, hence "-like"; import the vendor .model when you need that part's exact behavior.`,
     spice: (c) => bjtSpice(c, type, `Q_SB_${part}`, () => card),
     kicad: { symbol: `Transistor_BJT:${part}`, footprint: "Package_TO_SOT_THT:TO-92_Inline", pinMap },
   };
@@ -182,19 +182,19 @@ export const pnp = genericBjt("PNP");
 export const q2n3904 = namedBjt("2N3904", "NPN",
   "Is=6.734f Xti=3 Eg=1.11 Vaf=74.03 Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Xtb=1.5 Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Cjc=3.638p Mjc=.3085 Vjc=.75 Fc=.5 Cje=4.493p Mje=.2593 Vje=.75 Tr=239.5n Tf=301.2p Itf=.4 Vtf=4 Xtf=2 Rb=10",
   "General-purpose small-signal NPN (40 V, 200 mA). B left, C top, E bottom.", { E: "1", B: "2", C: "3" },
-  "Parameters from the widely circulated 2N3904 Gummel-Poon model (as distributed with many SPICE libraries).");
+  "Typical Gummel-Poon values for the 2N3904 in the style of common public SPICE models.");
 export const q2n3906 = namedBjt("2N3906", "PNP",
   "Is=1.41f Xti=3 Eg=1.11 Vaf=18.7 Bf=180.7 Ne=1.5 Ise=0 Ikf=80m Xtb=1.5 Br=4.977 Nc=2 Isc=0 Ikr=0 Rc=2.5 Cjc=9.728p Mjc=.5776 Vjc=.75 Fc=.5 Cje=8.063p Mje=.3677 Vje=.75 Tr=33.42n Tf=179.3p Itf=.4 Vtf=4 Xtf=6 Rb=10",
   "General-purpose small-signal PNP (40 V, 200 mA), complement of the 2N3904. B left, C top, E bottom.", { E: "1", B: "2", C: "3" },
-  "Parameters from the widely circulated 2N3906 Gummel-Poon model.");
+  "Typical Gummel-Poon values for the 2N3906 in the style of common public SPICE models.");
 export const bc547 = namedBjt("BC547", "NPN",
   "Is=2.39e-14 Nf=1.008 Ise=3.545e-15 Ne=1.541 Bf=294.3 Ikf=0.1357 Vaf=63.2 Nr=1.004 Isc=6.272e-14 Nc=1.243 Br=7.946 Ikr=0.1144 Var=25.9 Rb=1 Irb=1e-6 Rbm=1 Re=0.4683 Rc=0.85 Xtb=0 Eg=1.11 Xti=3 Cje=1.358e-11 Vje=0.65 Mje=0.3279 Tf=4.391e-10 Xtf=120 Vtf=2.643 Itf=0.7495 Ptf=0 Cjc=3.728e-12 Vjc=0.3997 Mjc=0.2955 Xcjc=0.6193 Tr=1e-32 Cjs=0 Vjs=0.75 Mjs=0.333 Fc=0.9579",
   "European general-purpose NPN (45 V, 100 mA), B gain group. Note the C-B-E pinout. B left, C top, E bottom.", { C: "1", B: "2", E: "3" },
-  "Parameters from the widely circulated BC547B Gummel-Poon model.");
+  "Typical Gummel-Poon values for the BC547B in the style of common public SPICE models.");
 export const bc557 = namedBjt("BC557", "PNP",
   "Is=3.83e-14 Nf=1.008 Ise=1.22e-14 Ne=1.528 Bf=344.4 Ikf=0.08039 Vaf=21.11 Nr=1.005 Isc=2.85e-13 Nc=1.28 Br=14.84 Ikr=0.047 Var=32.02 Rb=1 Irb=1e-6 Rbm=1 Re=0.6202 Rc=0.5713 Xtb=0 Eg=1.11 Xti=3 Cje=1.23e-11 Vje=0.6106 Mje=0.378 Tf=5.6e-10 Xtf=3.414 Vtf=5.23 Itf=0.1483 Ptf=0 Cjc=1.08e-11 Vjc=0.1022 Mjc=0.3563 Xcjc=0.6288 Tr=1e-32 Cjs=0 Vjs=0.75 Mjs=0.333 Fc=0.8027",
   "European general-purpose PNP (45 V, 100 mA), complement of the BC547. B left, C top, E bottom.", { C: "1", B: "2", E: "3" },
-  "Parameters from the widely circulated BC557B Gummel-Poon model.");
+  "Typical Gummel-Poon values for the BC557B in the style of common public SPICE models.");
 
 for (const d of [npn, q2n3904, bc547]) modelSlot(d.id, ["NPN"]);
 for (const d of [pnp, q2n3906, bc557]) modelSlot(d.id, ["PNP"]);

@@ -68,7 +68,7 @@ export const capacitorPolarized: ComponentDef = {
   description: "Polarized (electrolytic) capacitor; + is pin 1 at the top. Simulated as an ideal capacitor with optional ESR.",
   keywords: ["electrolytic", "polarized", "cap", "elko", "bulk"],
   pins: [{ id: "1", name: "+", x: 0, y: -3 }, { id: "2", name: "−", x: 0, y: 3 }],
-  symbol: [vlead(-3, -0.5), rect(-1.6, -0.8, 3.2, 0.3), { kind: "arc", x1: -1.6, y1: 0.8, x2: 1.6, y2: 0.8, r: 3, sweep: true }, vlead(0.4, 3), text(-1.4, -1.6, "+", 1.2)],
+  symbol: [vlead(-3, -0.5), rect(-1.6, -0.8, 3.2, 0.3), { kind: "arc", x1: -1.6, y1: 0.6, x2: 1.6, y2: 0.6, r: 3, sweep: false }, vlead(1.05, 3), text(-1.4, -1.6, "+", 1.2)],
   props: [
     { key: "value", label: "Capacitance", kind: "number", unit: "F", default: "100u", min: 0 },
     modelProp("esr", "ESR", "0", "Ω", "Equivalent series resistance. 0 = ideal."),

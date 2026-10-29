@@ -369,7 +369,7 @@ describe("555 timer", () => {
     return b;
   };
   for (const [r1, r2, c] of [["1k", "10k", "10n"], ["10k", "47k", "100n"]]) {
-    it(`astable f ≈ 1.44/((R1+2R2)C) within 10 %, duty ≈ (R1+R2)/(R1+2R2) (R1=${r1}, R2=${r2}, C=${c})`, async () => {
+    it(`astable f ≈ 1.44/((R1+2R2)C) within 3 %, duty ≈ (R1+R2)/(R1+2R2) ± 2 points (R1=${r1}, R2=${r2}, C=${c})`, async () => {
       const R1 = Number(r1.replace("k", "e3")), R2 = Number(r2.replace("k", "e3")), C = Number(c.replace("n", "e-9"));
       const f = 1.44 / ((R1 + 2 * R2) * C);
       const b = astable(r1, r2, c);
@@ -379,10 +379,10 @@ describe("555 timer", () => {
       if (rise.length < 4) throw new Error(`only ${rise.length} rising edges; out max ${Math.max(...vec(r, "out").real)}, th range ${Math.min(...vec(r, "th").real)}..${Math.max(...vec(r, "th").real)}, tstop ${b.project.simulation.tran.stop}`);
       const periods = rise.slice(2).map((t, i) => t - rise[i + 1]);
       const fMeas = 1 / (periods.reduce((a, x) => a + x, 0) / periods.length);
-      expect(Math.abs(fMeas / f - 1)).toBeLessThan(0.1);
+      expect(Math.abs(fMeas / f - 1)).toBeLessThan(0.03);
       const t0 = rise[2], t1 = fall.find((t) => t > t0)!;
       const duty = (t1 - t0) * fMeas;
-      expect(Math.abs(duty - (R1 + R2) / (R1 + 2 * R2))).toBeLessThan(0.05);
+      expect(Math.abs(duty - (R1 + R2) / (R1 + 2 * R2))).toBeLessThan(0.02);
       // Capacitor swings between VCC/3 and 2VCC/3.
       const th = vec(r, "th").real.slice(Math.floor(vec(r, "th").real.length / 2));
       expect(Math.max(...th)).toBeCloseTo(6, 0);
@@ -400,7 +400,7 @@ describe("555 timer", () => {
     b.project.simulation.tran = { stop: "5m", step: "2u" };
     const r = await run(b, "tran");
     const up = crossings(r, "out", 1.6, "rise")[0], down = crossings(r, "out", 1.6, "fall").find((t) => t > up)!;
-    expect(Math.abs((down - up) / (1.1 * 10e3 * 100e-9) - 1)).toBeLessThan(0.05);
+    expect(Math.abs((down - up) / (1.1 * 10e3 * 100e-9) - 1)).toBeLessThan(0.02);
     expect(at(r, "out", 0.5e-3)).toBeLessThan(0.1); // idle low before the trigger
   }, 60_000);
 

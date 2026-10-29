@@ -53,7 +53,7 @@ export const timer555: ComponentDef = {
     modelProp("iq", "Supply current", "3m", "A", "Quiescent current at 5 V (scales with VCC)."),
   ],
   provenance: "behavioral",
-  accuracyNote: "Behavioral model: ideal comparators at exactly VCC/3 and 2·VCC/3, an SR latch with datasheet priorities (reset > trigger > threshold), a 10 Ω discharge switch and an output stage with a fixed high-level drop. Timing follows the ideal formulas (ln 2 / ln 3); real parts add ~1-5 % error and a few hundred ns of delay. Output current is not drawn from VCC; the control pin is not available.",
+  accuracyNote: "Behavioral model: ideal comparators at exactly VCC/3 and 2·VCC/3, an SR latch with datasheet priorities (reset > trigger > threshold), a 10 Ω discharge switch and an output stage with a fixed high-level drop. Timing follows the ideal formulas (measured within ≈ 1.2 % of 1.44/((R1+2R2)C) and 1.1·RC); real parts add a few % error and a few hundred ns of delay. Output current is not drawn from VCC; the control pin is not available. An operating-point (op) analysis always shows the power-up state (output low, discharge on), not a steady state: a 555 circuit has to be run in transient.",
   analyses: { ac: false },
   dcPaths: [["VCC", "GND"], ["OUT", "GND"], ["DIS", "GND"], ["TRIG", "GND"], ["THR", "GND"], ["RST", "GND"]],
   spice: (c) => {

@@ -61,7 +61,8 @@ export const opamp: ComponentDef = {
     a0: sn(c.num("a0")), gbw: sn(c.num("gbw")), sr: sn(c.num("sr")), vos: sn(c.num("vos")),
     rout: sn(c.num("rout")), hrh: sn(c.num("hrh")), hrl: sn(c.num("hrl")),
   }),
-  kicad: { symbol: "Simulation_SPICE:OPAMP", footprint: "Package_DIP:DIP-8_W7.62mm", pinMap: { inp: "1", inn: "2", vp: "3", vn: "4", out: "5" } },
+  // The generic symbol numbers its pins 1-5, which matches no real package: no default footprint.
+  kicad: { symbol: "Simulation_SPICE:OPAMP", footprint: "", pinMap: { inp: "1", inn: "2", vp: "3", vn: "4", out: "5" } },
 };
 
 export const lm358 = {

@@ -132,9 +132,9 @@ describe("examples simulate as documented", () => {
     const rise = crossings(r, "out", 3.5, "rise"), fall = crossings(r, "out", 3.5, "fall");
     const f = 1.44 / ((10e3 + 2 * 68e3) * 10e-6);
     const per = (rise[rise.length - 1] - rise[1]) / (rise.length - 2);
-    expect(Math.abs(1 / per / f - 1)).toBeLessThan(0.1);
+    expect(Math.abs(1 / per / f - 1)).toBeLessThan(0.03);
     const t0 = rise[1], t1 = fall.find((t) => t > t0)!;
-    expect(Math.abs((t1 - t0) / per - 78 / 146)).toBeLessThan(0.05);
+    expect(Math.abs((t1 - t0) / per - 78 / 146)).toBeLessThan(0.02);
     const cap = window(r, "cap", 2, 5);
     expect(Math.max(...cap)).toBeCloseTo(6, 0); expect(Math.min(...cap)).toBeCloseTo(3, 0);
   }, 120_000);
@@ -145,7 +145,7 @@ describe("examples simulate as documented", () => {
     const up = crossings(r, "out", 3.5, "rise"), down = crossings(r, "out", 3.5, "fall");
     expect(up.length).toBe(1);
     expect(up[0]).toBeGreaterThan(10e-3); expect(up[0]).toBeLessThan(11e-3);
-    expect(Math.abs((down[0] - up[0]) / 1.1 - 1)).toBeLessThan(0.05);
+    expect(Math.abs((down[0] - up[0]) / 1.1 - 1)).toBeLessThan(0.02);
   }, 120_000);
 
   it("logic gates: truth tables over time", async () => {
