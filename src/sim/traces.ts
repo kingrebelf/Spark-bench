@@ -57,6 +57,7 @@ export function allTraces(project: Project, result: SimResult): Trace[] {
   const sorted = [...result.vectors].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "voltage" ? -1 : 1));
   for (const v of sorted) {
     if (v.kind !== "voltage" && v.kind !== "current") continue;
+    if (/sbl_/i.test(v.name)) continue; // live-mode control sources/nodes are helpers, not circuit signals
     const label = v.kind === "voltage" ? `V(${v.netName})` : `I(${(v.componentId && refs.get(v.componentId)) || v.name})`;
     out.push({ id: `all:${v.name}`, label, color: PROBE_COLORS[out.length % PROBE_COLORS.length], vector: v });
   }

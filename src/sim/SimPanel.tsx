@@ -13,13 +13,16 @@ import { interpolate } from "../scope/measure";
 import { Plot, type PaneSpec, type PlotHandle, type PlotSeries } from "../scope/Plot";
 import { resultToCsv, safeFileName, saveText, savePng } from "./exporting";
 import { addSaves, planCurrentSaves, PROBE_COLORS } from "./probes";
-import { acSources, suggestAc, suggestTran, validateSetup } from "./setup";
-import { BASE_SECONDS, SPEEDS, usePlayback, useRunProject, useSim, useStaleness } from "./store";
+import { displayLimit, hasLiveParts, RATES, rateLabel } from "./live";
+import { acSources, sourceFrequencies, suggestAc, suggestTran, validateSetup } from "./setup";
+import { usePlayback, useRunProject, useSim, useStaleness, useValidUntil } from "./store";
 import { allTraces, magDb, phaseDeg, probeTraces, type Trace } from "./traces";
 import "./sim.css";
 
 const HEIGHT_KEY = "sparkbench.simPanelHeight";
+const SIDE_KEY = "sparkbench.simSideHidden";
 const readHeight = () => { try { return Number(localStorage.getItem(HEIGHT_KEY)) || 360; } catch { return 360; } };
+const readSide = () => { try { return localStorage.getItem(SIDE_KEY) === "1"; } catch { return false; } };
 
 export function SimPanel() {
   const project = useProject((s) => s.project);
@@ -30,6 +33,8 @@ export function SimPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const plotRef = useRef<PlotHandle>(null);
   const [showAll, setShowAll] = useState(false);
+  const [sideHidden, setSideHidden] = useState(readSide);
+  useEffect(() => { try { localStorage.setItem(SIDE_KEY, sideHidden ? "1" : "0"); } catch { /* ignore */ } }, [sideHidden]);
 
   const traces = useMemo(() => {
     if (!result?.ok) return { traces: [] as Trace[], missing: [] as ReturnType<typeof probeTraces>["missing"] };
@@ -42,7 +47,7 @@ export function SimPanel() {
     e.preventDefault();
     document.body.style.userSelect = "none";
     const startY = e.clientY, startH = height;
-    const move = (ev: PointerEvent) => setHeight(Math.min(window.innerHeight - 160, Math.max(160, startH + startY - ev.clientY)));
+    const move = (ev: PointerEvent) => setHeight(Math.min(window.innerHeight - 120, Math.max(160, startH + startY - ev.clientY)));
     const up = () => { document.body.style.userSelect = ""; window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
@@ -75,10 +80,11 @@ export function SimPanel() {
   const hasPlot = !!result?.ok && result.analysis !== "op" && traces.traces.length > 0;
   return (
     <section className="panel sim sim2" aria-label="Simulation" style={{ height }}>
-      <div className="sim-resize" onPointerDown={onResize} title="Drag to resize the simulation panel" role="separator" aria-orientation="horizontal" />
-      <SimBar />
+      <div className="sim-resize" onPointerDown={onResize} onDoubleClick={() => setHeight((h) => (h < window.innerHeight * 0.55 ? Math.round(window.innerHeight * 0.65) : 360))}
+        title="Drag to resize the simulation panel (double-click: tall / normal)" role="separator" aria-orientation="horizontal" />
+      <SimBar sideHidden={sideHidden} toggleSide={() => setSideHidden((v) => !v)} />
       <div className="sim-main">
-        <aside className="sim-side">
+        {!sideHidden && <aside className="sim-side">
           <SetupSection />
           <ProbesSection />
           <div className="sim-exports">
@@ -88,7 +94,7 @@ export function SimPanel() {
             <button className="btn sm" onClick={exportPng} disabled={!hasPlot} title={hasPlot ? "Download the plot as PNG" : "Needs a transient or AC plot"}>Plot PNG</button>
             {notice && <div className="notice">{notice}</div>}
           </div>
-        </aside>
+        </aside>}
         <div className="sim-results">
           <ResultArea result={result} status={status} blocked={blocked} traces={traces.traces} missing={traces.missing}
             showAll={showAll} setShowAll={setShowAll} plotRef={plotRef} height={height} />
@@ -100,20 +106,27 @@ export function SimPanel() {
 
 // ---------------------------------------------------------------- top bar
 
-function SimBar() {
+function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: () => void }) {
   const project = useProject((s) => s.project);
   const update = useProject((s) => s.update);
-  const { status, result, run, stop, reset, continuous, setContinuous, startedAt } = useSim();
+  const { status, result, run, stop, reset, continuous, setContinuous, startedAt, startLive, rerunning } = useSim();
   const stale = useStaleness();
   const [, force] = useState(0);
   useEffect(() => { if (status !== "running") return; const id = setInterval(() => force((n) => n + 1), 250); return () => clearInterval(id); }, [status]);
   const a = project.simulation.analysis;
+  const timeVarying = useMemo(() => sourceFrequencies(project).length > 0, [project]);
+  const liveParts = useMemo(() => hasLiveParts(project), [project]);
+  const operable = useMemo(() => project.schematic.components.some((c) => getPart(c.type)?.interactive), [project]);
   const label = status === "running" ? `Simulating… ${((Date.now() - (startedAt ?? Date.now())) / 1000).toFixed(1)} s`
+    : rerunning ? "Re-simulating from 0 s with your changes…"
     : status === "done" ? `Done in ${result?.elapsedMs} ms`
     : status === "failed" ? "Failed: no results (see problems)"
     : status === "stopped" ? "Stopped: engine terminated, no results kept" : "Ready";
   return (
     <div className="sim-bar">
+      <button className="btn sm" onClick={toggleSide} aria-pressed={!sideHidden} title={sideHidden ? "Show analysis setup, probes and exports" : "Hide the setup column so the scope gets the full width"}>
+        {sideHidden ? "▸ Setup" : "◂ Setup"}
+      </button>
       <select value={a} aria-label="Analysis" onChange={(e) => update("Simulation settings", (d) => { d.simulation.analysis = e.target.value as AnalysisKind; }, { merge: true })}>
         <option value="op">DC operating point</option>
         <option value="tran">Transient</option>
@@ -122,6 +135,12 @@ function SimBar() {
       {status === "running"
         ? <button className="btn danger" onClick={stop} title="Terminates the ngspice engine. ngspice can't pause, so a stopped run returns no data.">■ Stop (terminate)</button>
         : <button className="btn primary" onClick={() => run()} title="Simulate the circuit">▶ Run</button>}
+      {status !== "running" && (
+        <button className="btn live" onClick={() => void startLive()}
+          title="Transient run played back in real time (slowed for fast circuits). Click switches and buttons, drag potentiometers while it plays; every change re-simulates the whole run from 0 s with your change at the time you made it.">
+          ⚡ Live
+        </button>
+      )}
       <button className="btn" onClick={reset} title="Clear results and restart the simulation engine">Reset</button>
       <span className={`status status-${status}`} role="status">{label}</span>
       {a === "op" && (
@@ -135,6 +154,16 @@ function SimBar() {
         </span>
       )}
       {result?.ok && !stale.any && stale.newProbes && <span className="stale">New probes need another run to get values.</span>}
+      {a === "op" && (timeVarying || operable) && (
+        <span className="hint-op small" role="note">
+          {timeVarying ? "This circuit has sources that change over time" : "This circuit has parts you can operate"}; the DC operating point shows one fixed state.{" "}
+          <button className="btn sm" onClick={() => update("Simulation settings", (d) => { d.simulation.analysis = "tran"; }, { merge: true })}>Use transient</button>
+          {" "}or press ⚡ Live.
+        </span>
+      )}
+      {a === "op" && !timeVarying && !operable && liveParts && result?.ok && result.analysis === "op" && (
+        <span className="dim small">LEDs glow from the operating-point current.</span>
+      )}
     </div>
   );
 }
@@ -213,7 +242,9 @@ function ProbesSection() {
   const update = useProject((s) => s.update);
   const selection = useProject((s) => s.selection);
   const result = useSim((s) => s.result);
-  const t = usePlayback((s) => s.t);
+  const tPlay = usePlayback((s) => s.t);
+  const valid = useValidUntil();
+  const t = displayLimit(tPlay, valid);
   const runProject = useRunProject();
   const conn = useMemo(() => computeConnectivity(project), [project]);
   const refOf = (id: string) => project.schematic.components.find((c) => c.id === id)?.ref ?? "?";
@@ -397,9 +428,12 @@ function OpTable({ traces }: { traces: Trace[] }) {
 function TranView({ result, traces, plotRef, height }: { result: SimResult; traces: Trace[]; plotRef: React.RefObject<PlotHandle | null>; height: number }) {
   const t = usePlayback((s) => s.t);
   const seek = usePlayback((s) => s.seek);
+  const rate = usePlayback((s) => s.rate);
+  const valid = useValidUntil();
+  const live = useSim((s) => !!s.session?.live);
   const x = result.x!.real;
   const t1 = usePlayback((s) => s.t1);
-  useEffect(() => { if (t1 !== x[x.length - 1]) usePlayback.getState().resetFor(result); }, [result, x, t1]);
+  useEffect(() => { if (t1 !== x[x.length - 1]) usePlayback.getState().adopt(result); }, [result, x, t1]);
   const series: PlotSeries[] = useMemo(() => traces.map((tr) => ({
     id: tr.id, label: tr.label, color: tr.color, x, y: tr.vector.real, pane: 0, axis: tr.vector.unit === "A" ? "right" : "left", unit: tr.vector.unit,
   })), [traces, x]);
@@ -408,31 +442,54 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
   return (
     <>
       <PlaybackBar />
-      <Plot handle={plotRef} series={series} panes={panes} xUnit="s" xLabel="time" playhead={t} onSeek={(v) => seek(v)} measurements height={height} />
+      <Plot handle={plotRef} series={series} panes={panes} xUnit="s" xLabel="time" playhead={t} onSeek={(v) => seek(v)} measurements height={height}
+        hideAfter={displayLimit(t, valid)} pendingFrom={valid} follow={live ? 10 * rate : null} />
     </>
   );
 }
 
 function PlaybackBar() {
-  const { t, playing, speed, t0, t1, play, pause, seek, setSpeed, exit } = usePlayback();
+  const { t, playing, rate, t0, t1, waiting, play, pause, seek, setRate, exit } = usePlayback();
+  const session = useSim((s) => s.session);
+  const rerunning = useSim((s) => s.rerunning);
+  const { clearChanges, extend } = useSim.getState();
+  const operable = useProject((s) => s.project.schematic.components.some((c) => getPart(c.type)?.interactive));
+  const stale = useStaleness();
   const span = t1 - t0;
   const pos = t ?? t1;
+  const nChanges = session ? Object.values(session.changes).reduce((n, c) => n + c.length, 0) : 0;
+  const rates = RATES.includes(rate) ? RATES : [...RATES, rate].sort((a, b) => a - b);
   return (
-    <div className="playback" aria-label="Playback of the computed result">
-      {playing ? <button className="btn sm" onClick={pause} title="Pause playback">❚❚ Pause</button>
-        : <button className="btn sm" onClick={play} title="Animate the computed waveform and the values on the schematic">▶ Play</button>}
-      <input type="range" min={0} max={1000} value={span > 0 ? Math.round((pos - t0) / span * 1000) : 0} aria-label="Playback position"
-        onChange={(e) => seek(t0 + Number(e.target.value) / 1000 * span)} />
-      <span className="mono small">{formatSI(pos, "s", 4)} / {formatSI(t1, "s", 4)}</span>
-      <label className="fld"><span>Speed</span>
-        <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
-          {SPEEDS.map((s) => <option key={s} value={s}>{s}×</option>)}
-        </select>
-      </label>
-      {t != null && <button className="btn sm" onClick={exit} title="Show the end-of-run values">Exit playback</button>}
-      <span className="dim small" title="ngspice computed the whole run before it was shown; playback speed never changes the simulation.">
-        Playback only: the simulation was computed ahead of time. 1× plays the run in {BASE_SECONDS} s.
-      </span>
+    <div className="playback-wrap">
+      <div className="playback" aria-label="Playback of the computed result">
+        {playing ? <button className="btn sm" onClick={pause} title="Pause playback">❚❚ Pause</button>
+          : <button className="btn sm" onClick={play} title="Play the computed waveform and the values on the schematic">▶ Play</button>}
+        <input type="range" min={0} max={1000} value={span > 0 ? Math.round((pos - t0) / span * 1000) : 0} aria-label="Playback position"
+          onChange={(e) => seek(t0 + Number(e.target.value) / 1000 * span)} />
+        <span className="mono small">{formatSI(pos, "s", 4)} / {formatSI(t1, "s", 4)}</span>
+        <label className="fld" title="How fast the computed result is replayed. It never changes the simulation."><span>Playback</span>
+          <select value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="Playback rate">
+            {rates.map((r) => <option key={r} value={r}>{rateLabel(r)}</option>)}
+          </select>
+        </label>
+        {t != null && <button className="btn sm" onClick={exit} title="Show the end-of-run values">Exit playback</button>}
+        {session && !session.live && !session.note && t != null && t >= t1 && <button className="btn sm" onClick={extend} title="Re-simulate from 0 s with a longer stop time (your changes included)">Simulate further</button>}
+      </div>
+      <div className="playback-notes small">
+        <span className="dim" title="ngspice computes a run before it is shown; playback only replays it.">
+          Playback of a finished ngspice run{rate === 1 ? ", in real time" : `: ${rateLabel(rate)}`}.
+        </span>
+        {session && operable && !stale.any && nChanges === 0 && <span>Click switches and buttons, drag potentiometers on the schematic while it plays.</span>}
+        {session && operable && stale.any && <span className="warn">The schematic changed: run again to operate parts.</span>}
+        {nChanges > 0 && <span className="live-note">
+          Re-simulated from 0 s with your changes at the times you made them ({nChanges} change{nChanges > 1 ? "s" : ""}).{" "}
+          <button className="btn sm" onClick={clearChanges} title="Forget the recorded changes and re-simulate with the parts' own settings">Clear changes</button>
+        </span>}
+        {rerunning && <span className="live-note">Re-simulating from 0 s… nothing after your change is shown until it finishes.</span>}
+        {waiting && <span className="live-note">Waiting for ngspice to compute more time…</span>}
+        {session?.live && !session.note && <span className="dim">Live run grows while it plays (up to {formatSI(session.plan.cap, "s", 3)}).</span>}
+        {session?.note && <span className="warn">{session.note}</span>}
+      </div>
     </div>
   );
 }

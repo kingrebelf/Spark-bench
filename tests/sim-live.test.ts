@@ -5,6 +5,9 @@ import { runSimulation } from "../src/sim/run";
 import { interpolate } from "../src/scope/measure";
 import { displayLimit, livePlan, recordChange, toPwl, validUntil, valueAt, niceRate, defaultRate } from "../src/sim/live";
 import type { Project, SimResult } from "../src/core/types";
+import type { EngineOutput, SpiceEngine } from "../src/core/simulate";
+import { useProject } from "../src/core/store";
+import { setSimEngine, usePlayback, useSim } from "../src/sim/store";
 
 /** 5 V -> R1 330 -> SW1 -> LED -> gnd, joined by labels. */
 function ledSwitch(part: "switch_spst" | "push_button" = "switch_spst") {
@@ -149,4 +152,67 @@ describe("live time scale", () => {
     expect(defaultRate(5)).toBe(1);
     expect(defaultRate(0.02)).toBe(0.002);
   });
+});
+
+/** Node engine whose runs wait for `release()`, to look at the store while a re-run is in flight. */
+class GatedEngine implements SpiceEngine {
+  gate: Promise<void> = Promise.resolve();
+  private open: () => void = () => {};
+  hold() { this.gate = new Promise((r) => { this.open = r; }); }
+  release() { this.open(); }
+  async run(netlist: string): Promise<EngineOutput> { await this.gate; return engine().run(netlist); }
+  stop() { /* nothing to terminate in Node */ }
+}
+
+describe("live session in the store", () => {
+  it("records a toggle at the playhead, hides data past it until the re-run lands, then shows the new run", async () => {
+    const { b, S } = ledSwitch();
+    useProject.getState().load(b.project);
+    const eng = new GatedEngine();
+    setSimEngine(eng);
+    await useSim.getState().run("tran");
+    usePlayback.getState().pause();
+    const first = useSim.getState().result!;
+    expect(first.ok).toBe(true);
+    expect(useSim.getState().session?.live).toBe(false);
+    expect(ledI(first, 8e-3)).toBeLessThan(1e-6);
+
+    usePlayback.getState().seek(5e-3);
+    eng.hold();
+    useSim.getState().change(S.id, 1);
+    let st = useSim.getState();
+    expect(st.rerunning).toBe(true);
+    expect(st.result).toBe(first); // the old run stays shown…
+    const valid = validUntil(st.session!.log, st.resultSeq);
+    expect(valid).toBeCloseTo(5e-3, 12); // …but only up to the change
+    expect(displayLimit(9e-3, valid)).toBeCloseTo(5e-3, 12);
+
+    eng.release();
+    await new Promise<void>((r) => { const u = useSim.subscribe((x) => { if (!x.rerunning) { u(); r(); } }); });
+    st = useSim.getState();
+    expect(validUntil(st.session!.log, st.resultSeq)).toBeNull();
+    expect(st.result).not.toBe(first);
+    expect(Math.abs(ledI(st.result!, 4e-3))).toBeLessThan(1e-6);
+    expect(ledI(st.result!, 6e-3)).toBeGreaterThan(5e-3);
+    expect(st.result!.netlist).toMatch(/PWL\(/);
+    expect(usePlayback.getState().t).toBeCloseTo(5e-3, 12); // playback position kept
+    useSim.getState().reset();
+  }, 60_000);
+
+  it("a change at the end of the run extends the stop time", async () => {
+    const { b, S } = ledSwitch();
+    useProject.getState().load(b.project);
+    setSimEngine(engine());
+    await useSim.getState().run("tran");
+    usePlayback.getState().pause();
+    const t1 = usePlayback.getState().t1;
+    usePlayback.getState().seek(t1);
+    useSim.getState().change(S.id, 1);
+    expect(useSim.getState().session!.stop).toBeGreaterThan(t1);
+    await new Promise<void>((r) => { const u = useSim.subscribe((x) => { if (!x.rerunning) { u(); r(); } }); });
+    const r = useSim.getState().result!;
+    expect(r.x!.real[r.x!.real.length - 1]).toBeGreaterThan(t1 * 1.5);
+    expect(ledI(r, t1 * 1.4)).toBeGreaterThan(5e-3);
+    useSim.getState().reset();
+  }, 60_000);
 });

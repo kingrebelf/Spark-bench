@@ -32,6 +32,15 @@ interface Props {
   xLog?: boolean;
   /** Playback position (x units); draws a playhead and dims the not-yet-played part. */
   playhead?: number | null;
+  /**
+   * Data with x beyond this is not drawn, measured or read by cursors (live playback: the trace grows with
+   * the playhead, and nothing past a change that is still being re-simulated is shown).
+   */
+  hideAfter?: number | null;
+  /** Start of data that is being recomputed; marked on the plot. */
+  pendingFrom?: number | null;
+  /** Follow the playhead with a window of this x span when the data is longer (until you zoom). */
+  follow?: number | null;
   onSeek?: (x: number) => void;
   /** Show the min/max/avg/RMS/pk-pk/frequency table (time-domain plots). */
   measurements?: boolean;
@@ -52,7 +61,7 @@ function cssVar(el: Element, name: string, fallback: string) {
   return getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 }
 
-export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, measurements, height, handle }: Props) {
+export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, pendingFrom, follow, onSeek, measurements, height, handle }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
@@ -85,7 +94,17 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, mea
     if (lo === hi) return xLog ? [lo / 2, hi * 2] : [lo - 0.5, hi + 0.5];
     return [lo, hi];
   }, [series, xLog]);
-  const xr: Range = view.x ?? extent;
+  const followRange = useMemo<Range | null>(() => {
+    if (view.x || follow == null || playhead == null || xLog || extent[1] - extent[0] <= follow) return null;
+    // Page like a scope in roll mode: the window jumps forward when the playhead nears its right edge.
+    const page = follow * 0.75;
+    const rel = playhead - extent[0];
+    const k = rel <= follow * 0.9 ? 0 : Math.floor((rel - follow * 0.9) / page) + 1;
+    const lo = Math.min(extent[1] - follow, extent[0] + k * page);
+    return [lo, lo + follow];
+  }, [view.x, follow, playhead, xLog, extent]);
+  const xr: Range = view.x ?? followRange ?? extent;
+  const lim = hideAfter ?? Infinity;
 
   const fx = useCallback((v: number) => (xLog ? Math.log10(Math.max(v, 1e-300)) : v), [xLog]);
   const ifx = useCallback((v: number) => (xLog ? 10 ** v : v), [xLog]);
@@ -105,7 +124,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, mea
       let lo = Infinity, hi = -Infinity;
       for (const s of visible) {
         if (s.pane !== p || s.axis !== side) continue;
-        const a = Math.max(0, lowerBound(s.x, xr[0]) - 1), b = Math.min(s.x.length, lowerBound(s.x, xr[1]) + 1);
+        const a = Math.max(0, lowerBound(s.x, xr[0]) - 1), b = Math.min(s.x.length, lowerBound(s.x, Math.min(xr[1], pendingFrom ?? Infinity)) + 1);
         for (let i = a; i < b; i++) { const v = s.y[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
       }
       if (!Number.isFinite(lo)) { lo = -1; hi = 1; }
@@ -169,7 +188,8 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, mea
     ctx.fillStyle = text; ctx.textAlign = "right"; ctx.fillText(xLabel, M.left + plotW, bottom + 16);
 
     // traces, clipped per pane
-    const ph = playhead != null && !forExport ? xToPx(playhead) : null;
+    const ph = playhead != null && !forExport && hideAfter == null ? xToPx(playhead) : null;
+    const cut = Number.isFinite(lim) ? Math.min(M.left + plotW, Math.max(M.left, xToPx(lim))) : null;
     for (const { s, d } of decimated) {
       const key = `${s.pane}:${s.axis}`; if (!yRanges[key]) continue;
       const top = paneTop(s.pane);
@@ -179,14 +199,28 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, mea
       };
       ctx.save(); ctx.beginPath(); ctx.rect(M.left, top, plotW, paneH); ctx.clip();
       ctx.strokeStyle = s.color; ctx.lineWidth = 1.5; ctx.lineJoin = "round";
-      if (ph != null) {
+      if (cut != null) {
+        // Nothing past the limit: not yet played, or waiting for the re-simulation.
+        ctx.beginPath(); ctx.rect(M.left, top, cut - M.left, paneH); ctx.clip(); path(); ctx.stroke();
+      } else if (ph != null) {
         // Played part bright, the rest faint: the waveform "draws" as playback advances.
         ctx.save(); ctx.beginPath(); ctx.rect(M.left, top, ph - M.left, paneH); ctx.clip(); path(); ctx.stroke(); ctx.restore();
         ctx.save(); ctx.globalAlpha = 0.22; ctx.beginPath(); ctx.rect(ph, top, M.left + plotW - ph, paneH); ctx.clip(); path(); ctx.stroke(); ctx.restore();
       } else { path(); ctx.stroke(); }
       ctx.restore();
     }
-  }, [width, height, panes, xr, xLog, plotW, paneH, yRanges, decimated, xToPx, xUnit, xLabel, playhead]);
+    if (pendingFrom != null && !forExport) {
+      const px = xToPx(pendingFrom);
+      if (px <= M.left + plotW) {
+        const x0 = Math.max(M.left, px);
+        ctx.save(); ctx.fillStyle = cssVar(el, "--accent", "#4fc3f7"); ctx.globalAlpha = 0.08;
+        ctx.fillRect(x0, M.top, M.left + plotW - x0, bottom - M.top);
+        ctx.globalAlpha = 1; ctx.fillStyle = text; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        ctx.fillText("re-simulating from 0 s with your change…", x0 + 4, M.top + 4);
+        ctx.restore();
+      }
+    }
+  }, [width, height, panes, xr, xLog, plotW, paneH, yRanges, decimated, xToPx, xUnit, xLabel, playhead, lim, pendingFrom]);
 
   const drawOverlay = useCallback((ctx: CanvasRenderingContext2D) => {
     const el = overRef.current!;
@@ -347,8 +381,9 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, mea
   const window_: Range = cA != null && cB != null ? [Math.min(cA, cB), Math.max(cA, cB)] : xr;
   const meas = useMemo(() => {
     if (!measurements) return new Map<string, Measurements | null>();
-    return new Map(visible.map((s) => [s.id, measure(s.x, s.y, window_[0], window_[1])]));
-  }, [measurements, visible, window_[0], window_[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+    const b = Math.min(window_[1], lim);
+    return new Map(visible.map((s) => [s.id, b > window_[0] ? measure(s.x, s.y, window_[0], b) : null]));
+  }, [measurements, visible, window_[0], window_[1], lim]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmtY = (v: number, unit: string) => (unit === "dB" ? `${v.toFixed(2)} dB` : unit === "°" ? `${v.toFixed(1)}°` : formatSI(v, unit, 4));
   const zoomed = view.x !== null || Object.keys(view.y).length > 0;
@@ -386,7 +421,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, mea
         <tbody>
           {series.map((s) => {
             const on = !hidden.has(s.id);
-            const va = cA != null ? interpolate(s.x, s.y, cA) : null, vb = cB != null ? interpolate(s.x, s.y, cB) : null;
+            const va = cA != null && cA <= lim ? interpolate(s.x, s.y, cA) : null, vb = cB != null && cB <= lim ? interpolate(s.x, s.y, cB) : null;
             const m = meas.get(s.id);
             return (
               <tr key={s.id} className={on ? "" : "off"}>
@@ -394,9 +429,9 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, mea
                   <label className="chk"><input type="checkbox" checked={on} onChange={() => setHidden((h) => { const n = new Set(h); if (n.has(s.id)) n.delete(s.id); else n.add(s.id); return n; })} />
                     <span className="swatch" style={{ background: s.color }} />{s.label}</label>
                 </td>
-                {va != null && <td>{fmtY(va, s.unit)}</td>}
-                {vb != null && <td>{fmtY(vb, s.unit)}</td>}
-                {va != null && vb != null && <td>{fmtY(vb - va, s.unit)}</td>}
+                {cA != null && <td>{va != null ? fmtY(va, s.unit) : "—"}</td>}
+                {cB != null && <td>{vb != null ? fmtY(vb, s.unit) : "—"}</td>}
+                {cA != null && cB != null && <td>{va != null && vb != null ? fmtY(vb - va, s.unit) : "—"}</td>}
                 {measurements && (on && m ? <>
                   <td>{fmtY(m.min, s.unit)}</td><td>{fmtY(m.max, s.unit)}</td><td>{fmtY(m.avg, s.unit)}</td>
                   <td>{fmtY(m.rms, s.unit)}</td><td>{fmtY(m.pkpk, s.unit)}</td>
@@ -409,7 +444,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, onSeek, mea
       </table>
       <div className="plot-foot">
         {cA != null && cB != null && <span>Δ{xUnit === "s" ? "t" : "f"} = {fmtX(Math.abs(cB - cA), xUnit)}{xUnit === "s" && cB !== cA ? ` · 1/Δt = ${formatSI(Number((1 / Math.abs(cB - cA)).toPrecision(4)), "Hz", 4)}` : ""}</span>}
-        {measurements && <span className="dim">Measured over {cA != null && cB != null ? "cursors A–B" : "the visible range"} ({fmtX(window_[0], xUnit)} … {fmtX(window_[1], xUnit)}); averages are time-weighted.</span>}
+        {measurements && <span className="dim">Measured over {cA != null && cB != null ? "cursors A–B" : "the visible range"} ({fmtX(window_[0], xUnit)} … {fmtX(Math.min(window_[1], lim), xUnit)}){Number.isFinite(lim) ? ", up to what has been played" : ""}; averages are time-weighted.</span>}
       </div>
     </div>
   );

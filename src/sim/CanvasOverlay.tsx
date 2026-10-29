@@ -7,25 +7,33 @@ import { computeConnectivity } from "../core/connectivity";
 import { useProject } from "../core/store";
 import { formatSI } from "../core/units";
 import { interpolate } from "../scope/measure";
+import { displayLimit } from "./live";
+import { LiveParts } from "./LiveParts";
 import { resolveProbes, vectorForProbe } from "./probes";
-import { usePlayback, useRunProject, useSim, useStaleness } from "./store";
+import { usePlayback, useRunProject, useSim, useStaleness, useValidUntil } from "./store";
 import { probeLabel } from "./traces";
 
 export function SimCanvasOverlay() {
   const project = useProject((s) => s.project);
   const result = useSim((s) => s.result);
   const t = usePlayback((s) => s.t);
+  const valid = useValidUntil();
   const stale = useStaleness();
   const conn = useMemo(() => computeConnectivity(project), [project]);
   const probes = useMemo(() => resolveProbes(project, conn), [project, conn]);
   // Values come from the probe as resolved in the simulated project; positions from the current one.
   const runProject = useRunProject();
   const atRun = useMemo(() => new Map(resolveProbes(runProject).map((r) => [r.probe.id, r])), [runProject]);
-  if (!probes.length) return null;
+  if (!probes.length) return <LiveParts />;
+  // Never show values past the earliest change that is still being re-simulated.
+  const tShow = displayLimit(t, valid);
+  const pendingAt = valid != null && t != null && t > valid;
 
   // Labels stack upward when they would overlap an earlier one.
   const placed: { x: number; y: number; w: number }[] = [];
   return (
+    <>
+    <LiveParts />
     <g className="sim-overlay" pointerEvents="none">
       {probes.map((r) => {
         let at = r.probe.target.point;
@@ -42,8 +50,8 @@ export function SimCanvasOverlay() {
         if (v && result) {
           if (result.analysis === "op") value = formatSI(v.real[0], v.unit, 3);
           else if (result.analysis === "tran" && result.x) {
-            const time = t ?? result.x.real[result.x.real.length - 1];
-            value = formatSI(interpolate(result.x.real, v.real, time), v.unit, 3) + (t == null ? " (end)" : "");
+            const time = tShow ?? result.x.real[result.x.real.length - 1];
+            value = pendingAt ? "… re-simulating" : formatSI(interpolate(result.x.real, v.real, time), v.unit, 3) + (t == null ? " (end)" : "");
           }
         }
         if (r.problem) value = "no target";
@@ -66,5 +74,6 @@ export function SimCanvasOverlay() {
         );
       })}
     </g>
+    </>
   );
 }
