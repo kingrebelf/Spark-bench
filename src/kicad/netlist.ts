@@ -163,21 +163,23 @@ export function diffNetlists(before: KicadNetlist, after: KicadNetlist): Netlist
   // Compare each surviving pin's set of neighbours (ignores net names).
   const neighbours = (nl: KicadNetlist) => {
     const m = new Map<string, string>();
+    const net = new Map<string, string>();
     for (const n of nl.nets) {
       const nodes = n.nodes.filter((d) => !d.ref.startsWith("#")).map((d) => `${d.ref}:${d.pin}`).sort();
-      for (const k of nodes) m.set(k, nodes.filter((x) => x !== k).join(" "));
+      for (const k of nodes) { m.set(k, nodes.filter((x) => x !== k).join(" ")); net.set(k, n.name); }
     }
-    return m;
+    return Object.assign(m, { net });
   };
   const nb = neighbours(before), na = neighbours(after);
   const rewired: string[] = [];
-  const fmt = (s: string) => (s ? s.split(" ").map((x) => x.replace(":", " pin ")).join(", ") : "nothing");
+  const fmt = (s: string) => (s ? s.split(" ").map((x) => x.replace(":", " pin ")).join(", ") : "no other part");
   for (const [k, now] of na) {
     const [ref] = k.split(":");
     if (!b.has(ref)) continue;
     const was = nb.get(k);
     if (was === undefined || was === now) continue;
-    rewired.push(`${k.replace(":", " pin ")}: now with ${fmt(now)} (was with ${fmt(was)})`);
+    const netName = na.net.get(k);
+    rewired.push(`${k.replace(":", " pin ")}${netName && !netName.startsWith("unconnected-") ? ` (net ${netName})` : ""}: now with ${fmt(now)} (was with ${fmt(was)})`);
   }
   return { added, removed, changed, rewired: rewired.sort() };
 }
