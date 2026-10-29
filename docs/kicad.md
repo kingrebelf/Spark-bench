@@ -45,13 +45,17 @@ Writes `<name>.kicad_pro`, `<name>.kicad_sch` and, if chosen, `<name>.kicad_pcb`
   - Diodes, LEDs, zeners, Schottkys and BJTs whose SparkBench model is a plain `.model` card → KiCad's built-in
     `D`/`NPN`/`PNP` (Gummel-Poon) models with the same parameters (a diode's grading coefficient is written `mj`;
     `m` would be read by KiCad as the instance multiplier) and `Sim.Pins` from the SPICE node order.
+  - Other sources whose SPICE line is a plain DC and/or PULSE source (DC current source, triangle/sawtooth source)
+    → KiCad `V`/`I` DC or PULSE with the same numbers.
   - The analysis becomes a text directive (`.op`, `.tran …`, `.ac …`).
-  - Not mapped (KiCad will ask for a model): op-amps, logic, 555 and other behavioural subcircuits; MOSFETs
-    (SparkBench ties bulk to source, which a 3-pin KiCad symbol cannot express); switches, meters, transformers.
-    The export notes list these per part. Capacitor initial voltages, probes and imported vendor model files are
-    not transferred.
+  - Not mapped (KiCad will ask for a model, or use its own): op-amps, logic, 555 and other behavioural
+    subcircuits; MOSFETs (SparkBench ties bulk to source, which a 3-pin KiCad symbol cannot express); switches,
+    meters, transformers. Where the KiCad symbol carries its own default `Sim.*` settings (e.g.
+    `Simulation_SPICE:OPAMP` → KiCad's built-in op-amp), the export note says they do not reflect the SparkBench
+    part's model. Capacitor initial voltages, probes and imported vendor model files are not transferred.
 - **Simulation-only sources** (`Simulation_SPICE:*` without a footprint) are written with `on_board no` /
-  `in_bom no`, so they stay off the PCB and BOM.
+  `in_bom no`, so they stay off the PCB and BOM. A part that has a footprint is always put on the board, even
+  if its library symbol is marked `on_board no`.
 - **Library tables.** If KiCad has no global `sym-lib-table`/`fp-lib-table` yet (fresh install), project tables
   listing only the used KiCad libraries (through `${KICAD10_SYMBOL_DIR}` / `${KICAD10_FOOTPRINT_DIR}`) are written,
   so the project resolves its libraries in KiCad and `kicad-cli`.

@@ -84,7 +84,7 @@ export function reviewMapping(project: Project, facts: LibraryFacts, lookup: (t:
           used.size > def.pins.length ? "The extra KiCad pins will be left unconnected (ERC may flag them). Choose a closer symbol if that is wrong."
             : "Some part pins have no KiCad pin. Choose a symbol with all of the part's pins.");
       }
-      boardless = sf.power || (!m.footprint && /^Simulation_SPICE:/.test(m.symbol)) || !sf.onBoard;
+      boardless = sf.power || (!m.footprint && (/^Simulation_SPICE:/.test(m.symbol) || !sf.onBoard));
     }
     if (!boardless) {
       if (!m.footprint) {

@@ -97,7 +97,8 @@ export function mergedKicadPartition(board: KicadNetlist, spice: SpiceElement[] 
     nodes.add(k); find(k); union(k, `board:${n.name}`);
   }
   for (const p of simOnly) {
-    const el = spice?.find((e) => e.name === p.ref || e.name.toUpperCase() === p.ref.toUpperCase());
+    // KiCad prefixes the device letter when the reference does not start with it (e.g. XU1 for a subcircuit).
+    const el = spice?.find((e) => e.name.toUpperCase() === p.ref.toUpperCase() || e.name.toUpperCase() === `${p.device === "SUBCKT" ? "X" : p.device[0] ?? ""}${p.ref}`.toUpperCase());
     if (!el) continue;
     const pairs = p.simPins.trim().split(/\s+/).map((s) => s.split("=")).filter((x) => x.length === 2);
     const order = MODEL_PIN_ORDER[p.device.toUpperCase()] ?? pairs.map(([, m]) => m);

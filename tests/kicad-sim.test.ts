@@ -69,3 +69,40 @@ describe.skipIf(!kicad)("KiCad simulation fields reproduce SparkBench results", 
     await compareOp(b, ["b", "c"], id);
   });
 });
+
+describe.skipIf(!kicad)("sources mapped from their own SPICE line", () => {
+  it("DC current source into a resistor", async () => {
+    if (!getPart("idc")) return;
+    const b = new Builder();
+    const I = b.place("idc", "I1", 0, 0, { value: "2m" });
+    const R = b.place("resistor", "R1", 10, 0, { value: "1k" });
+    b.label("x", b.pin(I, "2")); b.label("x", b.pin(R, "1"));
+    b.label("GND", b.pin(I, "1")); b.label("GND", b.pin(R, "2"));
+    await compareOp(b, ["x"], "idc");
+  });
+  it("triangle source: KiCad's netlist gives the same waveform", async () => {
+    if (!getPart("vtriangle")) return;
+    const b = new Builder();
+    const V = b.place("vtriangle", "V1", 0, 0, { low: "-1", high: "3", frequency: "1k", symmetry: "25" });
+    const R = b.place("resistor", "R1", 10, 0, { value: "1k" });
+    b.label("w", b.pin(V, "1")); b.label("w", b.pin(R, "1"));
+    b.label("GND", b.pin(V, "2")); b.label("GND", b.pin(R, "2"));
+    b.project.simulation.analysis = "tran";
+    b.project.simulation.tran = { stop: "2m", step: "5u" };
+    const ours = await simulate(b.project, engine(), "tran");
+    expect(ours.ok).toBe(true);
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sb-sim-tri-"));
+    const ex = exportSchematic({ project: b.project, name: "tri", symbols: libs! });
+    const sch = path.join(dir, "tri.kicad_sch");
+    await writeText(sch, ex.text);
+    const spice = await exportNetlist(kicad!, sch, "spice");
+    expect(spice).toMatch(/PULSE/);
+    const out = await engine().run(spice);
+    const ti = out.variableNames.findIndex((v) => v.toLowerCase() === "time");
+    const wi = out.variableNames.findIndex((v) => v.toLowerCase() === "v(/w)");
+    const t = (out.data[ti] as { values: number[] }).values, w = (out.data[wi] as { values: number[] }).values;
+    const at = (xs: number[], ys: number[], x: number) => { const i = xs.findIndex((v) => v >= x); return i <= 0 ? ys[0] : ys[i - 1] + (ys[i] - ys[i - 1]) * (x - xs[i - 1]) / (xs[i] - xs[i - 1]); };
+    const ox = ours.x!.real, ow = ours.vectors.find((v) => v.netName === "w")!.real;
+    for (const s of [0.1e-3, 0.25e-3, 0.6e-3, 1.1e-3, 1.9e-3]) expect(at(t, w, s)).toBeCloseTo(at(ox, ow, s), 2);
+  });
+});

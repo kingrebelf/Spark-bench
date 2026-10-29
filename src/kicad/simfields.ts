@@ -54,8 +54,15 @@ export function simMapping(def: ComponentDef, inst: ComponentInstance, symbolPro
   const generic = modelCardMapping(def, inst);
   if (generic) return { value: baseValue, fields: generic, simulatable: true };
   // Parts whose library mapping already carries Sim.* fields, or whose KiCad symbol has its own model.
-  const hasSim = Object.keys(def.kicad?.fields ?? {}).some((k) => k.startsWith("Sim.")) || Object.keys(symbolProps).some((k) => k === "Sim.Device");
-  if (hasSim) return { value: baseValue, fields: {}, simulatable: true };
+  const src = sourceLineMapping(def, inst);
+  if (src) return { value: "${SIM.PARAMS}", fields: src, simulatable: true };
+  // Sim.* fields given explicitly by the part's library mapping are trusted.
+  if (Object.keys(def.kicad?.fields ?? {}).some((k) => k.startsWith("Sim."))) return { value: baseValue, fields: {}, simulatable: true };
+  // A KiCad symbol's own default Sim.* settings do not reflect this part's values or model: say so.
+  if (symbolProps["Sim.Device"]) {
+    return { value: baseValue, fields: {}, simulatable: false,
+      note: `KiCad symbol ${symbolId} brings its own default simulation settings (${symbolProps["Sim.Device"]}${symbolProps["Sim.Name"] ? ` ${symbolProps["Sim.Name"]}` : ""}), which do not reflect this part's model; check them in KiCad before simulating there.` };
+  }
   // KiCad infers R/C/L models from the reference prefix and a numeric value.
   if (/^(Device:(R|C|L)(_.*)?)$/.test(symbolId) && valueProp) return { value: baseValue, fields: {}, simulatable: true };
   return {
@@ -125,4 +132,49 @@ export function modelCardMapping(def: ComponentDef, inst: ComponentInstance): Re
   const f: Record<string, string> = { "Sim.Device": dev.sim, "Sim.Pins": pairs.sort().join(" "), "Sim.Params": [...params.map((p) => `${p.key}=${p.v}`), ...inst2].join(" ") };
   if (dev.type) f["Sim.Type"] = dev.type;
   return f;
+}
+
+// ------------------------------------------------------------------ generic independent sources
+
+/**
+ * Parts whose SPICE emitter produces one V or I source line with DC and/or PULSE(...) (e.g. a DC current
+ * source, a triangle source built from PULSE) map onto KiCad's V/I DC or PULSE model with the same numbers.
+ */
+export function sourceLineMapping(def: ComponentDef, inst: ComponentInstance): Record<string, string> | null {
+  if (!def.spice || !def.kicad) return null;
+  const cards: string[] = [];
+  let lines: string[] | null;
+  try {
+    lines = def.spice({
+      node: (p) => `@${p}@`, num: (k) => parseSI(String(prop(def, inst, k))), str: (k) => String(prop(def, inst, k)),
+      define: (_k, t) => cards.push(t), inst: { ...inst, ref: "X" }, analysis: "tran", model: () => undefined,
+    });
+  } catch { return null; }
+  if (!lines || lines.length !== 1 || cards.length) return null;
+  const m = /^([VI])\S*\s+@([^@]+)@\s+@([^@]+)@\s+(.*)$/i.exec(lines[0].trim());
+  if (!m) return null;
+  const pa = def.kicad.pinMap[m[2]], pb = def.kicad.pinMap[m[3]];
+  if (pa === undefined || pb === undefined) return null;
+  let rest = m[4].trim();
+  const params: string[] = [];
+  let type = "DC";
+  const pulse = /PULSE\s*\(([^)]*)\)/i.exec(rest);
+  if (pulse) {
+    const v = pulse[1].trim().split(/[\s,]+/);
+    if (v.length !== 7) return null;
+    type = "PULSE";
+    ["y1", "y2", "td", "tr", "tf", "tw", "per"].forEach((k, i) => params.push(`${k}=${v[i]}`));
+    rest = rest.replace(pulse[0], " ");
+  }
+  const dc = /\bDC\s+(\S+)/i.exec(rest);
+  if (dc) { if (type === "DC") params.push(`dc=${dc[1]}`); rest = rest.replace(dc[0], " "); }
+  const ac = /\bAC\s+(\S+)/i.exec(rest);
+  if (ac) { params.push(`ac=${ac[1]}`); rest = rest.replace(ac[0], " "); }
+  if (type === "DC" && !dc) {
+    const bare = rest.trim().split(/\s+/)[0];
+    if (!bare || Number.isNaN(parseSI(bare))) return null;
+    params.push(`dc=${bare}`); rest = rest.replace(bare, " ");
+  }
+  if (rest.trim()) return null; // something we do not understand (SIN with extras, PWL, ...)
+  return { "Sim.Device": m[1].toUpperCase(), "Sim.Type": type, "Sim.Pins": [`${pa}=+`, `${pb}=-`].sort().join(" "), "Sim.Params": params.join(" ") };
 }

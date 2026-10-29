@@ -187,8 +187,9 @@ export function exportSchematic(input: ExportInput): SchExport {
     const sim = simMapping(def, inst, s.info.props, m.symbol);
     if (sim.note) notes.push(`${ref}: ${sim.note}`);
     const simOnly = !m.footprint && /^Simulation_SPICE:/.test(m.symbol);
-    const onBoard = simOnly ? false : s.info.onBoard;
-    const inBom = simOnly ? false : s.info.inBom;
+    // A part with a footprint goes on the board even if its library symbol is marked simulation-only.
+    const onBoard = m.footprint ? true : simOnly ? false : s.info.onBoard;
+    const inBom = m.footprint ? true : simOnly ? false : s.info.inBom;
     if (simOnly) notes.push(`${ref}: simulation source; excluded from the board and BOM.`);
     const uuid = stableUuid(`${seed}|${inst.id}|sym`);
     const fields = { ...sim.fields, ...m.fields };
