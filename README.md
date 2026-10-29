@@ -24,7 +24,7 @@
 
 <p align="center">
   <img src="docs/images/demo.gif" alt="SparkBench live mode: a 555 timer blinks an LED in real time while the scope scrolls; clicking the switch turns the LED off and on again" width="900">
-  <br><sub>Live mode in real time: the 555 blinks the LED, the scope scrolls, and clicking SW1 re-simulates the circuit with the switch open, then closed.</sub>
+  <br><sub>Live mode in real time: the 555 blinker example with an on/off switch added in front of the LED. The scope scrolls, and clicking SW1 re-simulates the circuit with the switch open, then closed.</sub>
 </p>
 
 The app is a schematic editor and circuit simulator for people who want to *see* a circuit work and
@@ -134,7 +134,7 @@ npm run dev        # desktop app with hot reload
 |---|---|
 | `npm run dev` | Desktop app (Electron) with hot reload |
 | `npm run dev:web` | Renderer only, in a browser at <http://localhost:5183> (no file dialogs, KiCad or AI) |
-| `npm test` | 438 tests (vitest), including real ngspice runs; KiCad tests skip without KiCad |
+| `npm test` | The test suite (vitest, 400+ tests), including real ngspice runs; KiCad tests skip without KiCad |
 | `npm run typecheck` | TypeScript check |
 | `npm run build` | Production build into `dist/` and `dist-electron/` |
 | `npm start` | Build, then run the production app |
