@@ -78,6 +78,8 @@ export function embedSymbol(libSyms: Map<string, SList>, libName: string, name: 
   return flat;
 }
 
+const MANDATORY = ["Reference", "Value", "Footprint", "Datasheet", "Description"];
+
 function flattenDerived(parentEmbedded: SList, derived: SList, parentName: string, name: string): SList {
   // Start from the parent; replace/insert the derived symbol's own properties and flags,
   // rename unit sub-symbols Parent_U_B -> Name_U_B.
@@ -104,7 +106,17 @@ function flattenDerived(parentEmbedded: SList, derived: SList, parentName: strin
     }
     items.push(it);
   }
-  out.items = items;
+  // KiCad orders fields: mandatory ones, user fields, then keywords and footprint filters.
+  const rank = (e: SExpr) => {
+    if (!isList(e) || head(e) !== "property") return -1;
+    const k = arg(e)!;
+    const m = MANDATORY.indexOf(k);
+    return m >= 0 ? m : k === "ki_keywords" ? 7 : k === "ki_fp_filters" ? 8 : 6;
+  };
+  const props = items.filter((e) => rank(e) >= 0);
+  const sorted = props.map((e, i) => ({ e, i })).sort((a, b) => rank(a.e) - rank(b.e) || a.i - b.i).map((x) => x.e);
+  let k = 0;
+  out.items = items.map((e) => (rank(e) >= 0 ? sorted[k++] : e));
   return out;
 }
 

@@ -430,7 +430,8 @@ function placedSymbol(a: PlaceArgs): SList {
       effects));
   }
   const pinNums: string[] = [];
-  for (const p of unitPins(a.info, a.unit)) if (!pinNums.includes(p.number)) pinNums.push(p.number);
+  // KiCad lists every pin of the symbol (all units) on each placed unit.
+  for (const p of a.info.pins) if ((p.bodyStyle === 0 || p.bodyStyle === 1) && !pinNums.includes(p.number)) pinNums.push(p.number);
   const items: (SExpr | null)[] = [
     list("lib_id", str(a.libId)),
     list("at", num(a.at.x), num(a.at.y), num(canon.angle)),
@@ -444,7 +445,7 @@ function placedSymbol(a: PlaceArgs): SList {
     list("dnp", "no"),
     list("uuid", str(a.uuid)),
     ...props,
-    ...pinNums.map((n) => list("pin", str(n), list("uuid", str(stableUuid(`${a.pinUuidSeed}|pin|${n}`))))),
+    ...pinNums.map((n) => list("pin", str(n), list("uuid", str(stableUuid(`${a.uuid}|pin|${n}`))))),
     list("instances", list("project", str(a.projName), list("path", str(`/${a.rootUuid}`), list("reference", str(a.ref)), list("unit", num(a.unit))))),
   ];
   return { t: "list", items: [sym("symbol"), ...items.filter((x): x is SExpr => !!x)] };
