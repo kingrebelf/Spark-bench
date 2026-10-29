@@ -84,6 +84,12 @@ export interface SpiceEmitContext {
   analysis: AnalysisKind;
   /** Look up a project-imported model by id. */
   model(id: string): SpiceModel | undefined;
+  /**
+   * Live-mode schedule for this instance's interactive prop: [time in s, value] pairs, sorted, starting at t=0
+   * (booleans as 0/1). Undefined outside live mode; emitters then use the static prop value. Emit it as a PWL
+   * control source (e.g. a voltage-controlled switch, or a behavioral resistor r='...' / B-source).
+   */
+  schedule?: [number, number][];
 }
 
 export interface ComponentDef {
@@ -109,6 +115,15 @@ export interface ComponentDef {
   kicad?: KicadMapping;
   /** Special roles handled by connectivity rather than SPICE. */
   role?: "ground" | "netlabel" | "probe-voltage" | "probe-current";
+  /**
+   * Operable on the canvas during simulation. "toggle" flips a boolean prop on click (switch);
+   * "momentary" holds it true while the pointer is down (push button); "slider" sets a numeric prop
+   * between min and max by dragging (potentiometer wiper). Live mode records each change with its
+   * simulation time and re-simulates from t = 0 with the recorded schedule.
+   */
+  interactive?: { kind: "toggle" | "momentary" | "slider"; prop: string; min?: number; max?: number };
+  /** Visual indicator driven by simulation results (e.g. LED glow from its forward current). */
+  indicator?: { kind: "led"; currentPin: string; colorProp?: string; ratedCurrent?: number };
   /** Text shown on the canvas next to the symbol: prop keys to display. */
   displayProps?: string[];
 }

@@ -12,6 +12,11 @@ export interface NetlistResult {
   elementMap: Map<string, string>;
 }
 
+export interface NetlistOptions {
+  /** Live mode: component id -> [time, value] schedule for its interactive prop. */
+  schedules?: Map<string, [number, number][]>;
+}
+
 /** SPICE element names must start with the element letter; we prefix when the ref doesn't. */
 export function spiceElementName(letter: string, ref: string): string {
   const safe = ref.replace(/[^A-Za-z0-9_]/g, "_");
@@ -34,6 +39,7 @@ export function generateNetlist(
   project: Project,
   analysis: AnalysisKind = project.simulation.analysis,
   lookup: (id: string) => ComponentDef | undefined = getPart,
+  opts: NetlistOptions = {},
 ): NetlistResult {
   const connectivity = computeConnectivity(project, lookup);
   const diagnostics: Diagnostic[] = [];
@@ -69,6 +75,7 @@ export function generateNetlist(
       },
       define: (key: string, text: string) => { if (!defines.has(key)) defines.set(key, text); },
       model: (id: string) => modelsById.get(id),
+      schedule: opts.schedules?.get(inst.id),
     };
     const out = def.spice(ctx);
     if (out === null) {

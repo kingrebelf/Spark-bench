@@ -2,7 +2,7 @@
 // The engine is abstracted so tests use ngspice-WASM in Node and the app uses a Web Worker.
 import { hasErrors, runChecks } from "./checks";
 import { getPart } from "./library";
-import { generateNetlist, type NetlistResult } from "./netlist";
+import { generateNetlist, type NetlistOptions, type NetlistResult } from "./netlist";
 import type { AnalysisKind, ComponentDef, Diagnostic, Project, SimResult, Vector } from "./types";
 
 /** Raw engine output, matching eecircuit-engine's ResultType plus its message log. */
@@ -86,9 +86,10 @@ export async function simulate(
   engine: SpiceEngine,
   analysis: AnalysisKind = project.simulation.analysis,
   lookup: (id: string) => ComponentDef | undefined = getPart,
+  opts: NetlistOptions = {},
 ): Promise<SimResult> {
   const t0 = Date.now();
-  const nl = generateNetlist(project, analysis, lookup);
+  const nl = generateNetlist(project, analysis, lookup, opts);
   const pre = [...runChecks(project, lookup, nl.connectivity), ...nl.diagnostics];
   const base = { analysis, netlist: nl.text, vectors: [] as Vector[], log: [] as string[] };
   if (hasErrors(pre)) return { ...base, ok: false, diagnostics: pre, elapsedMs: Date.now() - t0 };
