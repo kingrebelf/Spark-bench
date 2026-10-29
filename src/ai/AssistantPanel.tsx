@@ -16,7 +16,7 @@ function providerReady(h: ReturnType<typeof useAssistant.getState>["host"]): str
 }
 
 function Entry({ e, onPick }: { e: ChatEntry; onPick: (text: string) => void }) {
-  const { openReview, retry, askToFix, busy } = useAssistant();
+  const { openReview, retry, resetCodexModel, askToFix, busy } = useAssistant();
   const [raw, setRaw] = useState(false);
   const r = e.response;
   const last = useAssistant((s) => s.chat[s.chat.length - 1]?.id === e.id);
@@ -37,6 +37,7 @@ function Entry({ e, onPick }: { e: ChatEntry; onPick: (text: string) => void }) 
       {e.role === "error" && last && (
         <div className="ai-chips">
           {e.retry && <button onClick={() => retry()} disabled={busy}>Retry</button>}
+          {e.fix === "codex-default-model" && <button onClick={() => resetCodexModel()} disabled={busy} title="Clear the model in Assistant settings and retry">Use Codex default</button>}
           {e.diagnostics?.some((d) => d.severity === "error" && d.code.startsWith("ai-") && d.code !== "ai-invalid-json" && d.code !== "ai-schema") &&
             <button onClick={() => askToFix(e.diagnostics!)} disabled={busy}>Ask the assistant to fix these</button>}
           {e.raw && <button onClick={() => setRaw(!raw)}>{raw ? "Hide" : "Show"} raw output</button>}

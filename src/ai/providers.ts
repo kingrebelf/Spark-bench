@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: AiSettings = {
 /** Fixed endpoints: the renderer can never redirect a stored key to another host. */
 export const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 export const ANTHROPIC_VERSION = "2023-06-01";
+export const ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models";
 export const OPENAI_BASE = "https://api.openai.com/v1";
 
 export const PROVIDER_LABEL: Record<ProviderId, string> = {
@@ -40,7 +41,8 @@ export interface ChatMessage { role: "user" | "assistant"; content: string }
 export interface CompletionRequest { system: string; messages: ChatMessage[]; schema: Record<string, unknown> }
 
 export type AiErrorKind = "setup" | "network" | "http" | "refusal" | "truncated" | "format" | "codex" | "cancelled";
-export interface AiError { kind: AiErrorKind; message: string; status?: number; detail?: string }
+/** `fix`: a one-click remedy the UI can offer (set by the main process, not guessed from text in the renderer). */
+export interface AiError { kind: AiErrorKind; message: string; status?: number; detail?: string; fix?: "codex-default-model" }
 export type CompletionResult =
   | { ok: true; text: string; provider: ProviderId; model: string; note?: string }
   | { ok: false; error: AiError };
@@ -142,6 +144,78 @@ export function parseModelList(text: string): string[] {
   } catch { return []; }
 }
 
+// ------------------------------------------------------------------ model lists (settings dropdowns)
+
+/** One entry of a model dropdown: `id` is what gets stored and sent, `label` what the user reads. */
+export interface ModelOption { id: string; label: string }
+export type ModelListResult = { ok: true; models: ModelOption[]; source: string } | { ok: false; error: string };
+
+/**
+ * Anthropic `GET /v1/models` page: `{ data: [{ id, display_name, capabilities }], has_more, last_id }`, newest
+ * first (that order is kept). Models that report no structured-output support are left out, since every
+ * SparkBench request needs it.
+ */
+export function parseAnthropicModels(text: string): { models: ModelOption[]; hasMore: boolean; lastId: string | null } {
+  try {
+    const j = JSON.parse(text);
+    const models = (Array.isArray(j?.data) ? j.data : [])
+      .filter((m: any) => typeof m?.id === "string" && m?.capabilities?.structured_outputs?.supported !== false)
+      .map((m: any) => ({ id: m.id, label: typeof m.display_name === "string" && m.display_name !== m.id ? `${m.display_name} (${m.id})` : m.id }));
+    return { models, hasMore: j?.has_more === true, lastId: typeof j?.last_id === "string" ? j.last_id : null };
+  } catch { return { models: [], hasMore: false, lastId: null }; }
+}
+
+/** Lists the Claude models this API key can use (follows `has_more` paging, at most 5 pages). */
+export async function listAnthropicModels(apiKey: string, fetchImpl: FetchLike, signal?: AbortSignal): Promise<ModelListResult> {
+  const models: ModelOption[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < 5; page++) {
+    const url = `${ANTHROPIC_MODELS_URL}?limit=1000${after ? `&after_id=${encodeURIComponent(after)}` : ""}`;
+    let res: Awaited<ReturnType<FetchLike>>;
+    try {
+      res = await fetchImpl(url, { method: "GET", headers: { "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION }, signal });
+    } catch (e) {
+      return { ok: false, error: networkMessage(e, "Anthropic API", false) };
+    }
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = text.slice(0, 200);
+      try { const j = JSON.parse(text); if (j?.error?.message) msg = `${j.error.type ?? "error"}: ${j.error.message}`; } catch { /* keep raw text */ }
+      return { ok: false, error: `Anthropic API error ${res.status} (${msg})` };
+    }
+    const p = parseAnthropicModels(text);
+    models.push(...p.models);
+    if (!p.hasMore || !p.lastId) break;
+    after = p.lastId;
+  }
+  return { ok: true, models, source: "Models your Anthropic API key can use (GET /v1/models)." };
+}
+
+/** OpenAI / compatible `GET /models`, as dropdown entries (ids sorted; these servers give no display names). */
+export function modelOptions(ids: string[]): ModelOption[] {
+  return ids.map((id) => ({ id, label: id }));
+}
+
+/**
+ * The Codex CLI's model catalog (`codex debug models`, refreshed for the signed-in account). Only entries the
+ * CLI itself shows in its picker (`visibility: "list"`) are offered, by its own priority. Returns null if the
+ * output is not the expected catalog.
+ */
+export function parseCodexModels(stdout: string): ModelOption[] | null {
+  try {
+    const j = JSON.parse(stdout);
+    if (!Array.isArray(j?.models)) return null;
+    return j.models
+      .filter((m: any) => typeof m?.slug === "string" && m.visibility === "list")
+      .sort((a: any, b: any) => (Number(a.priority) || 0) - (Number(b.priority) || 0))
+      .map((m: any) => {
+        const name = typeof m.display_name === "string" && m.display_name ? m.display_name : m.slug;
+        const desc = typeof m.description === "string" && m.description ? ` · ${m.description}` : "";
+        return { id: m.slug, label: `${name} (${m.slug})${desc}` };
+      });
+  } catch { return null; }
+}
+
 // ------------------------------------------------------------------ dispatch (HTTP providers)
 
 /** Node's fetch reports every transport failure as "fetch failed"; the real reason is in `cause`. */
@@ -215,6 +289,11 @@ export function codexPrompt(req: CompletionRequest): string {
 }
 
 /** Turn Codex stderr/stdout into an honest error message (keeps the CLI's own wording). */
+/** Codex rejected the requested model (e.g. "The 'x' model is not supported when using Codex with a ChatGPT account"). */
+export function isCodexModelRejected(stderr: string): boolean {
+  return /model is not supported when using Codex|"code":"model_not_found"/i.test(stderr);
+}
+
 export function codexErrorMessage(exitCode: number | null, stderr: string, stdout: string): string {
   const lines = `${stderr}\n${stdout}`.split(/\r?\n/);
   const err = lines.filter((l) => /^ERROR:|error":|not supported|not logged in|login/i.test(l) && !/models_manager|models cache/i.test(l));

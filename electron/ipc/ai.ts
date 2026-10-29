@@ -8,8 +8,9 @@ import os from "node:os";
 import path from "node:path";
 import { KeyVault, type KeyProvider } from "../../src/ai/keys";
 import {
-  buildCodexArgs, codexErrorMessage, codexPrompt, completeHttp, mergeSettings, normalizeBaseUrl, OPENAI_BASE, parseModelList,
-  type AiSettings, type ChatMessage, type CompletionResult, type FetchLike,
+  buildCodexArgs, codexErrorMessage, codexPrompt, completeHttp, isCodexModelRejected, listAnthropicModels, mergeSettings, modelOptions,
+  normalizeBaseUrl, OPENAI_BASE, parseCodexModels, parseModelList,
+  type AiSettings, type ChatMessage, type CompletionResult, type FetchLike, type ModelListResult, type ProviderId,
 } from "../../src/ai/providers";
 import { AI_RESPONSE_JSON_SCHEMA } from "../../src/ai/schema";
 
@@ -99,12 +100,38 @@ async function runCodex(settings: AiSettings, system: string, messages: ChatMess
     if (killed === "timeout") return { ok: false, error: { kind: "codex", message: `Codex did not answer within ${settings.codex.timeoutSec} s and was stopped. Increase the timeout in Assistant settings or retry.` } };
     let text = "";
     try { text = await fs.readFile(outPath, "utf8"); } catch { /* no reply file */ }
-    if (code !== 0 || !text.trim()) return { ok: false, error: { kind: "codex", message: codexErrorMessage(code, stderr, stdout), detail: stderr.slice(-2000) } };
+    if (code !== 0 || !text.trim()) {
+      const fix = settings.codex.model.trim() && isCodexModelRejected(stderr) ? "codex-default-model" as const : undefined;
+      return { ok: false, error: { kind: "codex", message: codexErrorMessage(code, stderr, stdout), detail: stderr.slice(-2000), fix } };
+    }
     const model = /^model:\s*(\S+)/m.exec(stdout + "\n" + stderr)?.[1] ?? settings.codex.model;
     return { ok: true, text, provider: "codex", model, note: "Answered by Codex CLI with your ChatGPT sign-in (counts toward your ChatGPT plan's Codex limits)." };
   } finally {
     await fs.rm(work, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/**
+ * The models this Codex sign-in can use, from `codex debug models` (the CLI's own catalog, refreshed from
+ * OpenAI for the logged-in account; a debug subcommand, so its format may change between Codex versions).
+ * Only stdout is parsed: stderr carries unrelated cache warnings.
+ */
+async function codexModels(settings: AiSettings): Promise<ModelListResult> {
+  const exe = findCodex(settings.codex.path);
+  if (!exe) return { ok: false, error: "Codex CLI was not found." };
+  const { code, stdout } = await new Promise<{ code: number | null; stdout: string }>((resolve) => {
+    const child = spawn(exe, ["debug", "models"], { windowsHide: true, shell: needsShell(exe) });
+    let out = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.resume();
+    const timer = setTimeout(() => child.kill(), 30_000);
+    child.on("error", () => { clearTimeout(timer); resolve({ code: -1, stdout: "" }); });
+    child.on("close", (c) => { clearTimeout(timer); resolve({ code: c, stdout: out }); });
+  });
+  const models = code === 0 ? parseCodexModels(stdout) : null;
+  if (!models) return { ok: false, error: `Could not read the model list from Codex (\`codex debug models\` exited with ${code}). Use “Codex default” or enter a model id under Custom.` };
+  const v = spawnSync(exe, ["--version"], { encoding: "utf8", windowsHide: true, shell: needsShell(exe), timeout: 15000 });
+  return { ok: true, models, source: `Models offered to your sign-in by ${(v.stdout ?? "").trim() || "the Codex CLI"} (\`codex debug models\`).` };
 }
 
 // ------------------------------------------------------------------ KiCad footprint lookup
@@ -148,16 +175,23 @@ export function registerAiIpc(): void {
     return state();
   });
 
-  ipcMain.handle("sb:ai:listModels", async (_e, provider: "openai" | "compatible") => {
+  ipcMain.handle("sb:ai:listModels", async (_e, provider: ProviderId): Promise<ModelListResult> => {
     const s = await loadSettings();
+    if (provider === "codex") return codexModels(s);
+    if (provider === "anthropic") {
+      const key = await vault.get("anthropic");
+      if (!key) return { ok: false, error: "Save an Anthropic API key to list the models it can use." };
+      return listAnthropicModels(key, nodeFetch, AbortSignal.timeout(15000));
+    }
+    if (provider !== "openai" && provider !== "compatible") return { ok: false, error: "Unknown provider." };
     const base = provider === "openai" ? OPENAI_BASE : normalizeBaseUrl(s.compatible.baseUrl);
     const key = await vault.get(provider, provider === "compatible" ? base : undefined);
-    if (provider === "openai" && !key) return { ok: false, error: "Set an OpenAI API key first." };
+    if (provider === "openai" && !key) return { ok: false, error: "Save an OpenAI API key to list the models it can use." };
     try {
       const res = await fetch(`${base}/models`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(15000) });
       const text = await res.text();
       if (!res.ok) return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
-      return { ok: true, models: parseModelList(text) };
+      return { ok: true, models: modelOptions(parseModelList(text)), source: `Models listed by ${base}/models.` };
     } catch (e) {
       return { ok: false, error: `Could not reach ${base}: ${(e as Error).message}` };
     }

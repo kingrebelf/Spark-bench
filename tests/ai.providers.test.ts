@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { KeyVault, type Crypto } from "../src/ai/keys";
 import {
-  ANTHROPIC_URL, buildCodexArgs, codexErrorMessage, codexPrompt, completeHttp, DEFAULT_SETTINGS, mergeSettings,
-  parseModelList, type AiSettings, type FetchLike,
+  ANTHROPIC_MODELS_URL, ANTHROPIC_URL, buildCodexArgs, codexErrorMessage, codexPrompt, completeHttp, DEFAULT_SETTINGS,
+  isCodexModelRejected, listAnthropicModels, mergeSettings, parseCodexModels, parseModelList, type AiSettings, type FetchLike,
 } from "../src/ai/providers";
 import { AI_RESPONSE_JSON_SCHEMA } from "../src/ai/schema";
 
@@ -178,5 +178,47 @@ describe("key vault (safeStorage mocked)", () => {
     const { vault } = mk();
     await expect(vault.set("openai", "  ")).rejects.toThrow(/empty/);
     await expect(vault.set("openai", "sk-a\nsk-b")).rejects.toThrow(/spaces/);
+  });
+});
+
+describe("model lists for the settings dropdowns", () => {
+  it("lists Anthropic models newest-first with display names, following has_more paging", async () => {
+    const pages = [
+      { data: [{ type: "model", id: "claude-opus-5-5", display_name: "Claude Opus 5.5", capabilities: { structured_outputs: { supported: true } } },
+        { type: "model", id: "claude-old", display_name: "Old", capabilities: { structured_outputs: { supported: false } } }], has_more: true, last_id: "claude-old" },
+      { data: [{ type: "model", id: "claude-haiku-5-5", display_name: "Claude Haiku 5.5" }], has_more: false, last_id: "claude-haiku-5-5" },
+    ];
+    const calls: { url: string; init: any }[] = [];
+    const f: FetchLike = async (url, init) => { calls.push({ url, init }); const b = pages[calls.length - 1]; return { ok: true, status: 200, statusText: "", text: async () => JSON.stringify(b) }; };
+    const r = await listAnthropicModels("sk-ant-test", f);
+    expect(r.ok && r.models).toEqual([
+      { id: "claude-opus-5-5", label: "Claude Opus 5.5 (claude-opus-5-5)" },
+      { id: "claude-haiku-5-5", label: "Claude Haiku 5.5 (claude-haiku-5-5)" },
+    ]);
+    expect(calls[0].url.startsWith(ANTHROPIC_MODELS_URL)).toBe(true);
+    expect(calls[0].init.headers["x-api-key"]).toBe("sk-ant-test");
+    expect(calls[0].init.headers["anthropic-version"]).toBe("2023-06-01");
+    expect(calls[1].url).toContain("after_id=claude-old");
+  });
+  it("reports Anthropic list errors with status and message", async () => {
+    const r = await listAnthropicModels("bad", mockFetch(401, { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }).f);
+    expect(!r.ok && r.error).toMatch(/401.*invalid x-api-key/);
+  });
+  it("reads the Codex catalog: only models the CLI lists, by its priority, slug as the value", () => {
+    const out = JSON.stringify({ models: [
+      { slug: "gpt-5.6-luna", display_name: "GPT-5.6-Luna", description: "Fast.", visibility: "list", priority: 9 },
+      { slug: "gpt-reserve", display_name: "GPT-Reserve", visibility: "hide", priority: 4 },
+      { slug: "gpt-5.6-sol", display_name: "GPT-5.6-Sol", description: "", visibility: "list", priority: 6 },
+    ] });
+    expect(parseCodexModels(out)).toEqual([
+      { id: "gpt-5.6-sol", label: "GPT-5.6-Sol (gpt-5.6-sol)" },
+      { id: "gpt-5.6-luna", label: "GPT-5.6-Luna (gpt-5.6-luna) · Fast." },
+    ]);
+    expect(parseCodexModels("2026 ERROR failed to load models cache")).toBeNull();
+    expect(parseCodexModels("{}")).toBeNull();
+  });
+  it("recognises Codex rejecting a model (offers the one-click default)", () => {
+    expect(isCodexModelRejected("ERROR: {\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'GPT-6 Luna' model is not supported when using Codex with a ChatGPT account.\",\"code\":\"model_not_found\"}}")).toBe(true);
+    expect(isCodexModelRejected("ERROR: not logged in")).toBe(false);
   });
 });

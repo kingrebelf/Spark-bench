@@ -109,6 +109,27 @@ URL and deleted when the URL changes, so the renderer cannot redirect a stored k
 | **OpenAI-compatible** | Same request against your base URL, e.g. LM Studio `http://localhost:1234/v1`, Ollama `http://localhost:11434/v1` | Optional key. The server must support `json_schema` response formats; small models often still fail the format, which is shown as an error. |
 | **Codex CLI** | `codex exec` (see below) | Uses your ChatGPT sign-in; no API key. |
 
+**Model dropdowns.** Every provider has a model dropdown filled from the provider itself (`sb:ai:listModels`),
+plus **Custom…** for any id. A saved model that the list does not contain stays selectable and is marked
+"saved; not in the list for this account" rather than being changed silently.
+
+| Provider | Where the list comes from |
+|---|---|
+| Anthropic | `GET https://api.anthropic.com/v1/models` with your key (newest first, `has_more`/`after_id` paging; models reporting no structured-output support are left out). Without a saved key: the current model plus Custom. |
+| OpenAI / compatible | `GET <base>/models` with your key (if any). |
+| Codex | First entry **Codex default for your account** (stores "", no `-m`). Then the models of `codex debug models` with `visibility: "list"`, in the CLI's own order. |
+
+`codex debug models` prints the CLI's model catalog after refreshing it from OpenAI for the signed-in account.
+It is a **debug subcommand, not part of the documented non-interactive interface**, so its format may change
+between Codex versions; if it cannot be read the dropdown says so and offers only the default and Custom
+(no hard-coded fallback list). Checked 2026-10-29 with Codex 0.145.0 and a ChatGPT sign-in: it listed
+`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`. `gpt-5.6-luna` worked with `codex exec`; `gpt-5.5`, which appears only in
+the catalog bundled with the binary (`--bundled`), was rejected ("not supported when using Codex with a
+ChatGPT account"). So the refreshed list, not the bundled one, reflects the account.
+
+When Codex rejects the configured model, the main process marks the error (`fix: "codex-default-model"`) and
+the chat shows **Use Codex default** next to Retry: it clears the model setting and retries.
+
 A **Claude.ai or ChatGPT subscription does not include API access**: the Anthropic and OpenAI providers need
 API keys from console.anthropic.com / platform.openai.com, billed separately.
 
@@ -136,7 +157,8 @@ Investigated 2026-10-28 with Codex CLI 0.145.0 (`codex login status`: "Logged in
 - **Why `--ignore-user-config`:** this user's `~/.codex/config.toml` pins a model (`gpt-6.1-terra`) that the
   ChatGPT login rejects ("model is not supported when using Codex with a ChatGPT account"). Ignoring the user
   config makes Codex use the default model for the account; authentication still comes from `CODEX_HOME`.
-  A model can be set explicitly in settings; Codex's own error is shown verbatim if it is not allowed.
+  A model can be chosen in settings (see *Model dropdowns*); Codex's own error is shown verbatim if it is not
+  allowed, with a one-click **Use Codex default**.
 - **Limits:** usage counts toward the ChatGPT plan's Codex limits; replies take ~15–60 s; Codex is an agent
   (it could run read-only commands; the prompt tells it not to and the working folder is empty); there is no
   multi-turn API in exec mode, so the conversation is flattened into one prompt per request; it is not API
@@ -156,6 +178,7 @@ Not verified against the live services:
 - Anthropic and OpenAI completions (no API keys on this machine). A request with a dummy key reached
   `api.anthropic.com` and got the expected 401, shown in the panel as
   "Anthropic API error 401 (authentication_error): invalid x-api-key".
+- Anthropic model listing (`/v1/models`): covered by a mock-fetch test only (no key).
 - OpenAI-compatible completions: only model listing (`/v1/models` on LM Studio) was verified live; no local
   model was loaded, and loading one was avoided because other tools use that LM Studio instance.
 

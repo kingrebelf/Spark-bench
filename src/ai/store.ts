@@ -12,7 +12,7 @@ import type { KeyStatus } from "./keys";
 import { layoutProposal, type LayoutResult } from "./layout";
 import { checkProposal, parseAiResponse, type AiResponse, type Proposal, type ProposalCheck } from "./proposal";
 import { systemPrompt, userTurn, type AssistantAction } from "./prompt";
-import type { AiSettings, ChatMessage, CompletionResult } from "./providers";
+import type { AiError, AiSettings, ChatMessage, CompletionResult } from "./providers";
 import { checkDesign, runSuggestedSimulation, stageOf, type SimulationCheck, type ValidationStage } from "./validate";
 
 export interface HostState { settings: AiSettings; keys: KeyStatus; encryptionAvailable: boolean }
@@ -32,6 +32,8 @@ export interface ChatEntry {
   diagnostics?: Diagnostic[];
   /** For errors: the request can be retried. */
   retry?: boolean;
+  /** For errors: a one-click remedy reported by the main process. */
+  fix?: AiError["fix"];
   /** Raw model output for "show raw output" on format errors. */
   raw?: string;
   meta?: string;
@@ -66,6 +68,8 @@ interface AiState {
   refreshCodex: () => Promise<void>;
   send: (action: AssistantAction, text: string) => Promise<void>;
   retry: () => Promise<void>;
+  /** Clear the Codex model setting (use the account's default) and retry. */
+  resetCodexModel: () => Promise<void>;
   /** Send the validation errors of a rejected proposal back to the model. */
   askToFix: (diagnostics: Diagnostic[]) => Promise<void>;
   cancel: () => void;
@@ -158,6 +162,15 @@ export const useAssistant = create<AiState>((set, get) => ({
     await run();
   },
 
+  resetCodexModel: async () => {
+    const hs = get().host;
+    if (!hs || get().busy) return;
+    const settings = structuredClone(hs.settings);
+    settings.codex.model = "";
+    set({ host: await host.invoke<HostState>("sb:ai:saveSettings", settings) });
+    await get().retry();
+  },
+
   askToFix: async (diagnostics) => {
     const lines = diagnostics.filter((d) => d.severity === "error").map((d) => `- ${d.message}`).join("\n");
     await get().send("chat", `SparkBench rejected your last proposal:\n${lines}\nPlease send a corrected proposal.`);
@@ -237,9 +250,9 @@ export const useAssistant = create<AiState>((set, get) => ({
   clearChat: () => set({ chat: [], review: null }),
 }));
 
-function pushError(text: string, diagnostics: Diagnostic[] | undefined, retry: boolean, raw?: string) {
+function pushError(text: string, diagnostics: Diagnostic[] | undefined, retry: boolean, raw?: string, fix?: AiError["fix"]) {
   const s = useAssistant.getState();
-  useAssistant.setState({ chat: [...s.chat, { id: nextId++, role: "error", text, diagnostics, retry, raw }] });
+  useAssistant.setState({ chat: [...s.chat, { id: nextId++, role: "error", text, diagnostics, retry, raw, fix }] });
 }
 
 async function run() {
@@ -255,7 +268,7 @@ async function run() {
   useAssistant.setState({ busy: false });
   if (!res.ok) {
     if (res.error.kind === "cancelled") { pushError("Request cancelled.", undefined, true); return; }
-    pushError(res.error.message, undefined, res.error.kind !== "setup", res.error.detail);
+    pushError(res.error.message, undefined, res.error.kind !== "setup", res.error.detail, res.error.fix);
     return;
   }
   const parsed = parseAiResponse(res.text);
