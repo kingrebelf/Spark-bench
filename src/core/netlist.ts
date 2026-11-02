@@ -15,6 +15,8 @@ export interface NetlistResult {
 export interface NetlistOptions {
   /** Live mode: component id -> [time, value] schedule for its interactive prop. */
   schedules?: Map<string, [number, number][]>;
+  /** Live-mode chunk start in circuit time (see SpiceEmitContext.timeOffset). */
+  timeOffset?: number;
 }
 
 /** SPICE element names must start with the element letter; we prefix when the ref doesn't. */
@@ -76,6 +78,7 @@ export function generateNetlist(
       define: (key: string, text: string) => { if (!defines.has(key)) defines.set(key, text); },
       model: (id: string) => modelsById.get(id),
       schedule: opts.schedules?.get(inst.id),
+      timeOffset: opts.timeOffset ?? 0,
     };
     const out = def.spice(ctx);
     if (out === null) {

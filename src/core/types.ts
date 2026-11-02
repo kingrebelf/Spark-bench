@@ -90,6 +90,13 @@ export interface SpiceEmitContext {
    * control source (e.g. a voltage-controlled switch, or a behavioral resistor r='...' / B-source).
    */
   schedule?: [number, number][];
+  /**
+   * Live-mode chunking: this netlist simulates circuit time [timeOffset, timeOffset + stop] but SPICE time
+   * starts at 0. Time-dependent sources must shift by it (SIN phase += 360·f·t0, PULSE delay to the next
+   * edge after t0, PWL points minus t0 with earlier points dropped, behavioral `time` -> `(time+t0)`) and
+   * `schedule` times are absolute circuit time. 0 / undefined outside chunked live runs.
+   */
+  timeOffset?: number;
 }
 
 export interface ComponentDef {
