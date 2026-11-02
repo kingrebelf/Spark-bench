@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { assetNames, bumpVersion, notesFromCommits, parseCredential, parseLatestYml, prependRelease, sectionNotes, unreleasedNotes, verifyArtifacts } from "../scripts/release/lib";
+import { assetNames, bumpVersion, releaseBody, sameText, notesFromCommits, parseCredential, parseLatestYml, prependRelease, sectionNotes, unreleasedNotes, verifyArtifacts } from "../scripts/release/lib";
 import { parseChangelog } from "../src/launcher/notes";
 
 describe("release helpers", () => {
@@ -80,5 +80,16 @@ describe("latest.yml", () => {
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.problems.join()).toMatch(/sha512/);
     expect(verifyArtifacts(dir, "0.1.2")).toMatchObject({ ok: false });
+  });
+});
+
+describe("release body encoding", () => {
+  it("non-ASCII notes survive the UTF-8 JSON the script sends, and the post-upload check catches mangling", () => {
+    const body = releaseBody("- Click **More info → Run anyway** · Ω · ✓ · “quotes”", "0.1.1", { "SparkBench-Setup-0.1.1.exe": "ab" }, true);
+    const sent = Buffer.from(JSON.stringify({ body }), "utf8");
+    const roundTrip = JSON.parse(sent.toString("utf8")).body;
+    expect(roundTrip).toBe(body);
+    expect(sameText(roundTrip.replace(/\n/g, "\r\n"), body)).toBe(true);
+    expect(sameText(body.replace("→", "?"), body)).toBe(false);
   });
 });

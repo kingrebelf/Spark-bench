@@ -11,7 +11,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assetNames, bumpVersion, notesFromCommits, parseCredential, prependRelease, releaseBody, sectionNotes, sha256hex, unreleasedNotes, verifyArtifacts, type Bump } from "./lib.ts";
+import { assetNames, bumpVersion, sameText, notesFromCommits, parseCredential, prependRelease, releaseBody, sectionNotes, sha256hex, unreleasedNotes, verifyArtifacts, type Bump } from "./lib.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const OUT = path.join(ROOT, "release");
@@ -44,8 +44,9 @@ function token(): string {
 async function gh(method: string, url: string, tok: string, body?: unknown): Promise<any> {
   const res = await fetch(url.startsWith("http") ? url : API + url, {
     method,
-    headers: { Authorization: `Bearer ${tok}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "sparkbench-release", ...(body ? { "Content-Type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
+    headers: { Authorization: `Bearer ${tok}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "sparkbench-release", ...(body ? { "Content-Type": "application/json; charset=utf-8" } : {}) },
+    // Sent from memory as UTF-8 bytes, never through a command line (Windows mangles "→" into "?" there).
+    body: body ? Buffer.from(JSON.stringify(body), "utf8") : undefined,
   });
   const text = await res.text();
   if (!res.ok) die(`GitHub ${method} ${url} → ${res.status}: ${text.slice(0, 400)}`);
@@ -96,7 +97,9 @@ async function publish(version: string, notes: string) {
 
   const sums = Object.fromEntries([assetNames(version).installer, assetNames(version).portable].map((n) => [n, sha256hex(path.join(OUT, n))]));
   // Draft first, so an updater never sees the release before latest.yml is attached.
-  const rel = await gh("POST", "/releases", tok, { tag_name: tag, name: `SparkBench ${version}`, body: releaseBody(notes, version, sums, !stable), draft: true, prerelease: !stable });
+  const body = releaseBody(notes, version, sums, !stable);
+  const rel = await gh("POST", "/releases", tok, { tag_name: tag, name: `SparkBench ${version}`, body, draft: true, prerelease: !stable });
+  if (!sameText(rel.body ?? "", body)) die(`GitHub stored a different release body than was sent (encoding?). The draft ${rel.html_url} was left unpublished.`);
   for (const f of check.files) await upload(rel.upload_url, f, tok);
   const done = await gh("PATCH", `/releases/${rel.id}`, tok, { draft: false });
   log(`published ${done.html_url}`);

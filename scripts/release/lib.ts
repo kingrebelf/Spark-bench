@@ -132,3 +132,7 @@ export function releaseBody(notes: string, version: string, sums: Record<string,
     "```",
   ].join("\n");
 }
+
+/** Release bodies compare equal when only line endings or trailing whitespace differ. */
+const lf = (s: string) => s.replace(/\r\n?/g, "\n").trim();
+export const sameText = (a: string, b: string) => lf(a) === lf(b);
