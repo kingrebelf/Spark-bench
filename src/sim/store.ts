@@ -1,14 +1,15 @@
-// Simulation state: run/stop/reset, honest status, stale detection, transient playback, live
-// interactive sessions and optional continuous re-run of the operating point.
+// Simulation state: run/stop/reset, honest status, stale detection, transient playback, live interactive
+// sessions (chunked continuation from saved state) and optional continuous re-run of the operating point.
 import { create } from "zustand";
 import { getPart } from "../core/library";
 import type { SpiceEngine } from "../core/simulate";
 import { useProject } from "../core/store";
 import type { AnalysisKind, Diagnostic, Project, SimResult } from "../core/types";
-import { autoRate, defaultRate, edgeFor, livePlan, recordChange, toPwl, tranPlan, validUntil, staticValue, type Change, type LivePlan } from "./live";
+import { dropBefore, lastIndexAtOrBefore, runChunk, splice, stateAt, truncate } from "./chunk";
+import { autoRate, defaultRate, livePlan, recordChange, staticValue, tranPlan, valueAt, type Change, type LivePlan } from "./live";
 import { runSimulation } from "./run";
-import { detectFailure, type Damage } from "./stress";
-import { siText, validateSetup } from "./setup";
+import { validateSetup } from "./setup";
+import { damageText, failedAt, firstExceed, stressTracks, type Damage, type RatingKind } from "./stress";
 import { workerEngine } from "./workerEngine";
 
 export type SimStatus = "idle" | "running" | "done" | "failed" | "stopped";
@@ -26,27 +27,26 @@ export interface ResultBasis {
 }
 
 /**
- * A transient session: the run settings in effect plus the changes the user made on the canvas while it
- * played. Every re-run simulates from t = 0 with all changes; nothing is stitched.
+ * A transient session. The shown result is a timeline of chunks: each chunk is a real ngspice run that continues
+ * from the previous chunk's state at a real solver timepoint (see chunk.ts). Operating a part cuts the timeline
+ * at the last timepoint at or before the playhead and continues from the circuit's state at that moment.
  */
 export interface Session {
-  /** Started with Live: real-time default, grows while playing. */
+  /** Started with Live: computes ahead of the playhead for as long as it plays. */
   live: boolean;
   plan: LivePlan;
-  /** Current stop time (live sessions grow it ahead of the playhead). */
+  /** Run sessions compute up to here (Simulate further raises it). */
   stop: number;
-  /** Parts that failed from over-stress (modeled as open circuits from the failure time). */
-  damage: Record<string, Damage[]>;
-  /** Wall time the last run took, to start the next extension early enough. */
-  computeMs?: number;
-  /** Recorded changes per component id. */
+  /** Recorded changes per component id (for the canvas: the value in effect at a playback time). */
   changes: Record<string, Change[]>;
-  /** Change counter; `resultSeq` says which changes the shown result includes. */
-  seq: number;
-  log: { seq: number; t: number }[];
-  /** Plain-language note about the last thing that limited the session (cap reached, …). */
-  note?: string;
+  /** Parts that failed from over-stress (open circuits from the failure time). */
+  damage: Record<string, Damage[]>;
+  /** The last change: the circuit time it applies from, and how long until its first chunk was shown. */
+  lastChange?: { t: number; latencyMs?: number };
 }
+
+/** Averaged stress of one rating over the shown timeline (aligned with result.x). */
+export interface StressSeries { componentId: string; ref: string; kind: RatingKind; limit: number; tau: number; ratio: number[]; avg: number[] }
 
 interface SimState {
   status: SimStatus;
@@ -60,20 +60,18 @@ interface SimState {
   /** Re-run the operating point automatically after edits. */
   continuous: boolean;
   session: Session | null;
-  /** Session change seq the shown result was computed with. */
-  resultSeq: number;
-  /** A live re-run (from t = 0 with the recorded changes) is in flight; the old result stays shown up to `validUntil`. */
-  rerunning: boolean;
+  /** A chunk is being computed. */
+  computing: boolean;
+  /** Averaged stress of rated parts over the timeline (transient sessions). */
+  stress: StressSeries[];
   run: (analysis?: AnalysisKind) => Promise<void>;
-  /** Start a live session: transient in (scaled) real time that you can operate while it plays. */
+  /** Start a live session: transient played in (scaled) real time, computed ahead, operable while it plays. */
   startLive: () => Promise<void>;
-  /** Record an interactive change at circuit time t (defaults to the playhead) and re-simulate. */
+  /** Operate a part at the playback time (or `t`): continue from the circuit's state there with the new value. */
   change: (componentId: string, value: number, t?: number) => void;
-  /** Drop all recorded changes and re-simulate with the parts' static settings. */
-  clearChanges: () => void;
-  /** Simulate further: grow the session's stop time by one chunk and re-run. */
+  /** Run sessions: compute further than the stop time. */
   extend: () => void;
-  /** Replace every failed part at the playback time and re-simulate. */
+  /** Replace every failed part at the playback time and continue. */
   repairAll: () => void;
   stop: () => void;
   reset: () => void;
@@ -84,134 +82,219 @@ const settingsKey = (p: Project, a: AnalysisKind) => JSON.stringify(a === "tran"
 
 let token = 0;
 let pendingRerun = false;
-let pendingLive = false;
 /** Engine used by the store; tests swap in the Node engine. */
 let engine: SpiceEngine & { stop?: () => void } = workerEngine;
 export const setSimEngine = (e: SpiceEngine & { stop?: () => void }) => { engine = e; };
 
-/** Seconds of playback kept behind the playhead in live sessions (older samples are not saved). */
+/** Seconds of playback kept behind the playhead in live sessions (older samples are dropped). */
 export const HISTORY_SECONDS = 30;
+/** Seconds of playback computed ahead of the playhead, and per chunk (short, so a change is cheap). */
+const LEAD_SECONDS = 1;
+const CHUNK_SECONDS = 0.25;
+/** The first chunk after a change is shorter still, so the change shows up at once. */
+const FIRST_CHUNK_SECONDS = 0.1;
 
-/** Wall-clock lead (in circuit seconds) at which a live session starts computing further ahead. */
-const leadTime = (s: Session, rate: number) => Math.max(5, 1.5 * (s.computeMs ?? 0) / 1000) * rate;
-
-/**
- * The project with the session's stop/step in place of the tran settings, and the PWL schedules. Live sessions
- * still simulate from 0 s but only save the last HISTORY_SECONDS of playback behind the playhead (bounded memory).
- */
-function sessionInput(project: Project, s: Session) {
-  const pb = usePlayback.getState();
-  const start = s.live ? Math.max(0, Math.min(pb.t ?? 0, s.stop) - HISTORY_SECONDS * pb.rate) : 0;
-  const tran = { ...project.simulation.tran, stop: siText(s.stop), step: siText(s.plan.step), start: start > 0 ? siText(start) : undefined };
-  const p: Project = { ...project, simulation: { ...project.simulation, analysis: "tran", tran } };
-  const schedules = new Map<string, [number, number][]>();
-  const edge = edgeFor(s.plan.step);
-  for (const c of project.schematic.components) {
-    const def = getPart(c.type);
-    if (!def?.interactive) continue;
-    schedules.set(c.id, toPwl(staticValue(c, def), s.changes[c.id] ?? [], edge));
-  }
-  return { p, schedules };
-}
+const stressKey = (id: string, kind: string) => `${id}:${kind}`;
+/** Start computing (set when the store is created; playback calls it to keep ahead of the playhead). */
+let kick: () => void = () => {};
 
 export const useSim = create<SimState>((set, get) => {
   const basisOf = (project: Project, kind: AnalysisKind): ResultBasis =>
     ({ schematic: project.schematic, models: project.models, settings: settingsKey(project, kind), probeIds: project.simulation.probes.map((p) => p.id), project });
 
-  /**
-   * Look for a part that fails in this result (after the failures it already models). When one does, record it
-   * and return true: the caller re-simulates with the part open from that time.
-   */
-  let failChecks = 0;
-  function checkDamage(result: SimResult, project: Project): boolean {
-    const s = get().session;
-    if (!s || !result.ok || result.analysis !== "tran" || pendingLive) return false;
-    if (++failChecks > 40) return false; // a runaway chain of failures: stop modeling further ones
-    const f = detectFailure(project, result, s.damage);
-    if (!f) return false;
-    const seq = s.seq + 1;
-    set({ session: { ...s, seq, damage: { ...s.damage, [f.componentId]: [...(s.damage[f.componentId] ?? []), f.damage] }, log: [...s.log, { seq, t: f.t }] } });
-    return true;
+  // ------------------------------------------------------------ timeline state (outside React state for speed)
+  /** Interactive values at the end of the timeline. */
+  let params: Record<string, number> = {};
+  /** Advanced by every change, repair, Stop and Reset: a chunk computed for an older generation is discarded. */
+  let gen = 0;
+  let pumping = false;
+  let changeWall: number | null = null;
+  let firstAfterChange = false;
+  /** For the first chunk after a change or repair: values just before it, and parts to reconnect. */
+  let transitionFrom: Record<string, number> | null = null;
+  let reconnect: string[] = [];
+
+  const projectOf = () => get().basis?.project ?? useProject.getState().project;
+
+  /** Values of interactive parts in effect at circuit time t. */
+  function paramsAt(project: Project, changes: Record<string, Change[]>, t: number): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const c of project.schematic.components) {
+      const def = getPart(c.type);
+      if (def?.interactive) out[c.id] = valueAt(staticValue(c, def), changes[c.id], t);
+    }
+    return out;
   }
+
+  /** Damage averages for a new chunk, continuing the timeline's averages (or 0 after a repair). */
+  function chunkStress(project: Project, r: SimResult, damage: Record<string, Damage[]>, prev: StressSeries[]) {
+    const initial: Record<string, number> = {};
+    for (const s of prev) initial[stressKey(s.componentId, s.kind)] = s.avg[s.avg.length - 1] ?? 0;
+    return stressTracks(project, r, damage, undefined, initial);
+  }
+
+  /** Append a chunk (and its stress series) to the shown timeline; live sessions drop old history. */
+  function append(chunk: SimResult, tracks: ReturnType<typeof stressTracks>) {
+    const s = get().session!;
+    const prev = get().result;
+    let result = prev?.ok && prev.analysis === "tran" ? splice(prev, chunk) : chunk;
+    const skip = prev?.ok && prev.x && chunk.x && prev.x.real.length && chunk.x.real[0] <= prev.x.real[prev.x.real.length - 1] + 1e-15 ? 1 : 0;
+    const old = new Map(get().stress.map((x) => [stressKey(x.componentId, x.kind), x]));
+    let stress: StressSeries[] = tracks.map((tr) => {
+      const o = prev?.ok ? old.get(stressKey(tr.componentId, tr.kind)) : undefined;
+      const pad = (prev?.x?.real.length ?? 0) - (o?.avg.length ?? 0);
+      const head = (arr: number[] | undefined) => [...(arr ?? []), ...new Array(Math.max(0, pad)).fill(0)];
+      return { componentId: tr.componentId, ref: tr.ref, kind: tr.kind, limit: tr.limit, tau: tr.tau,
+        avg: prev?.ok ? [...head(o?.avg), ...Array.from(tr.avg).slice(skip)] : Array.from(tr.avg),
+        ratio: prev?.ok ? [...head(o?.ratio), ...Array.from(tr.ratio).slice(skip)] : Array.from(tr.ratio) };
+    });
+    if (s.live && result.x) {
+      const pb = usePlayback.getState();
+      const keepFrom = (pb.t ?? result.x.real[0]) - HISTORY_SECONDS * pb.rate;
+      const k = lastIndexAtOrBefore(result.x.real, keepFrom);
+      if (k > 0 && result.x.real[k] < keepFrom) {
+        result = dropBefore(result, k);
+        stress = stress.map((x) => ({ ...x, avg: x.avg.slice(k), ratio: x.ratio.slice(k) }));
+      }
+    }
+    set({ result, stress, resultRevision: Date.now() });
+    usePlayback.getState().adopt(result);
+  }
+
+  /** Cut the timeline at sample k (a real timepoint). */
+  function cutAt(k: number) {
+    const r = get().result!;
+    set({ result: truncate(r, k), stress: get().stress.map((x) => ({ ...x, avg: x.avg.slice(0, k + 1), ratio: x.ratio.slice(0, k + 1) })), resultRevision: Date.now() });
+    usePlayback.getState().adopt(get().result!);
+  }
+
+  /** Compute chunks until the session has enough ahead of the playhead (live) or reaches its stop time (Run). */
+  async function pump() {
+    if (pumping) return;
+    pumping = true;
+    set({ computing: true });
+    try {
+      for (let guard = 0; guard < 10_000; guard++) {
+        const s = get().session, r = get().result;
+        if (!s || !r?.ok || !r.x?.real.length || get().status !== "done") break;
+        const x = r.x.real, end = x[x.length - 1];
+        const pb = usePlayback.getState();
+        const target = s.live ? Math.max(pb.t ?? end, x[0]) + LEAD_SECONDS * pb.rate : s.stop;
+        if (end >= target - 1e-12) break;
+        const want = (firstAfterChange ? FIRST_CHUNK_SECONDS : CHUNK_SECONDS) * pb.rate;
+        const length = Math.min(Math.max(want, 20 * s.plan.step), target - end, s.plan.step * 50_000);
+        const myGen = gen, myToken = token;
+        const project = projectOf();
+        const open = Object.entries(s.damage).filter(([, l]) => failedAt(l, end)).map(([id]) => id);
+        const from = transitionFrom ?? undefined, rec = reconnect;
+        const chunk = await runChunk(project, engine, { t0: end, length, step: s.plan.step, params, open, from, reconnect: rec, state: stateAt(r, x.length - 1) });
+        if (myGen !== gen || myToken !== token) continue; // a change, repair or new run happened meanwhile
+        transitionFrom = null;
+        reconnect = [];
+        if (!chunk.ok || !chunk.x?.real.length) {
+          // Honest failure: show it, with no waveform.
+          usePlayback.getState().resetFor(null);
+          set({ status: "failed", result: chunk, stress: [], resultRevision: Date.now() });
+          break;
+        }
+        // Damage: the earliest part whose running average passes its limit in this chunk fails there.
+        const tracks = chunkStress(project, chunk, s.damage, get().stress);
+        let fail: { id: string; k: number; tr: (typeof tracks)[number] } | null = null;
+        for (const tr of tracks) {
+          if (open.includes(tr.componentId)) continue;
+          const tf = firstExceed(chunk.x.real, tr.avg, tr.limit);
+          if (tf == null) continue;
+          const k = lastIndexAtOrBefore(chunk.x.real, tf);
+          if (!fail || k < fail.k) fail = { id: tr.componentId, k, tr };
+        }
+        let piece = chunk, pieceTracks = tracks;
+        if (fail) {
+          piece = truncate(chunk, fail.k);
+          pieceTracks = tracks.map((t) => ({ ...t, avg: t.avg.slice(0, fail!.k + 1), ratio: t.ratio.slice(0, fail!.k + 1), raw: t.raw.slice(0, fail!.k + 1) }));
+          const tf = chunk.x.real[fail.k];
+          const d: Damage = { t: tf, ...damageText(project, fail.tr, tf, fail.tr.raw[fail.k]) };
+          set({ session: { ...s, damage: { ...s.damage, [fail.id]: [...(s.damage[fail.id] ?? []), d] } } });
+        }
+        append(piece, pieceTracks);
+        if (firstAfterChange && changeWall != null) {
+          const cur = get().session!;
+          set({ session: { ...cur, lastChange: { t: cur.lastChange?.t ?? end, latencyMs: Math.round(performance.now() - changeWall) } } });
+          changeWall = null;
+        }
+        firstAfterChange = false;
+      }
+    } finally {
+      pumping = false;
+      set({ computing: false });
+    }
+  }
+
+  /** Cut the timeline at the last real timepoint at or before t; returns that time (null when there is no timeline). */
+  function restartAt(t: number): number | null {
+    const r = get().result;
+    if (!r?.ok || r.analysis !== "tran" || !r.x?.real.length) return null;
+    const k = lastIndexAtOrBefore(r.x.real, t);
+    gen++;
+    if (k < r.x.real.length - 1) cutAt(k);
+    return r.x.real[k];
+  }
+
+  kick = () => void pump();
 
   /** A fresh run: replaces whatever is shown, auto-plays transients from t = 0. */
   async function fresh(project: Project, kind: AnalysisKind, session: Session | null) {
     const problems = validateSetup(project, kind);
     if (problems.some((d) => d.severity === "error")) {
-      set({ blocked: problems, status: "failed", result: null, basis: null, resultRevision: null, session: null });
+      set({ blocked: problems, status: "failed", result: null, basis: null, resultRevision: null, session: null, stress: [] });
       return;
     }
     const my = ++token;
-    pendingLive = false;
-    if (get().status === "running" || get().rerunning) engine.stop?.(); // a newer run replaces the old one
-    set({ status: "running", blocked: [], startedAt: Date.now(), session, rerunning: false, resultSeq: 0 });
-    const inp = session ? sessionInput(project, session) : null;
-    const result = await runSimulation(inp?.p ?? project, engine, kind, inp ? { schedules: inp.schedules, damage: session!.damage } : {});
+    gen++;
+    if (get().status === "running") engine.stop?.(); // a newer run replaces the old one
+    set({ status: "running", blocked: [], startedAt: Date.now(), session, stress: [] });
+    let result: SimResult;
+    if (session) {
+      params = paramsAt(project, {}, 0);
+      // Run: the whole span in one run. Live: a first chunk, then chunks ahead of the playhead.
+      const length = session.live ? Math.max(LEAD_SECONDS * session.plan.rate, 20 * session.plan.step) : session.stop;
+      result = await runChunk(project, engine, { t0: 0, length, step: session.plan.step, params, state: null });
+    } else {
+      result = await runSimulation(project, engine, kind);
+    }
     if (my !== token) return; // superseded by Stop, Reset or a newer Run
     result.diagnostics = [...problems, ...result.diagnostics];
     usePlayback.getState().resetFor(result);
-    failChecks = 0;
-    set({ status: result.ok ? "done" : "failed", result, startedAt: null, resultRevision: Date.now(), basis: basisOf(project, kind), resultSeq: session?.seq ?? 0,
-      session: session ? { ...session, computeMs: result.elapsedMs } : null });
-    if (result.ok && kind === "tran") {
+    set({ status: result.ok ? "done" : "failed", result: null, startedAt: null, resultRevision: Date.now(), basis: basisOf(project, kind) });
+    if (result.ok && kind === "tran" && session) {
+      const tracks = chunkStress(project, result, {}, []);
+      set({ result: null, stress: [] });
+      // detect a failure in the first chunk the same way as later ones: keep up to it, then continue
+      let piece = result, pieceTracks = tracks;
+      let fail: { id: string; k: number; tr: (typeof tracks)[number] } | null = null;
+      for (const tr of tracks) {
+        const tf = firstExceed(result.x!.real, tr.avg, tr.limit);
+        if (tf == null) continue;
+        const k = lastIndexAtOrBefore(result.x!.real, tf);
+        if (!fail || k < fail.k) fail = { id: tr.componentId, k, tr };
+      }
+      if (fail) {
+        piece = truncate(result, fail.k);
+        pieceTracks = tracks.map((t) => ({ ...t, avg: t.avg.slice(0, fail!.k + 1), ratio: t.ratio.slice(0, fail!.k + 1), raw: t.raw.slice(0, fail!.k + 1) }));
+        const tf = result.x!.real[fail.k];
+        set({ session: { ...session, damage: { [fail.id]: [{ t: tf, ...damageText(project, fail.tr, tf, fail.tr.raw[fail.k]) }] } } });
+      }
+      append(piece, pieceTracks);
       const pb = usePlayback.getState();
-      const auto = autoRate(project);
-      const span = defaultRate(pb.t1 - pb.t0);
-      pb.setRate(session?.live ? session.plan.rate : auto != null ? Math.min(auto, span) : span);
+      const auto = autoRate(project), span = defaultRate(session.stop);
+      pb.setRate(session.live ? session.plan.rate : auto != null ? Math.min(auto, span) : span);
       pb.play();
-      if (checkDamage(result, project)) void rerun();
+      void pump();
+    } else {
+      set({ result });
+      if (result.ok && kind === "tran") usePlayback.getState().play();
     }
     if (pendingRerun) { pendingRerun = false; scheduleContinuous(); }
   }
-
-  /** Re-simulate the session from t = 0 (latest changes win); playback keeps going meanwhile. */
-  async function rerun() {
-    const s = get().session;
-    if (!s || !get().result?.ok) return;
-    if (get().rerunning) { pendingLive = true; return; }
-    const my = token;
-    const project = get().basis?.project ?? useProject.getState().project;
-    const seq = s.seq;
-    set({ rerunning: true });
-    const inp = sessionInput(project, s);
-    const result = await runSimulation(inp.p, engine, "tran", { schedules: inp.schedules, damage: s.damage });
-    if (my !== token) return;
-    set({ rerunning: false });
-    if (!result.ok) {
-      // Honest failure: drop the waveform rather than keep showing data that no longer matches your changes.
-      usePlayback.getState().resetFor(null);
-      set({ status: "failed", result, resultRevision: Date.now(), resultSeq: seq });
-      pendingLive = false;
-      return;
-    }
-    usePlayback.getState().adopt(result);
-    const cur = get().session;
-    set({ result, resultRevision: Date.now(), resultSeq: seq, session: cur ? { ...cur, computeMs: result.elapsedMs } : cur });
-    if (pendingLive) { pendingLive = false; void rerun(); }
-    else if (checkDamage(result, project)) void rerun();
-  }
-
-  /** Grow the session's stop time (live sessions ahead of the playhead, or a change made at the end). */
-  function extendTo(t: number): boolean {
-    const s = get().session;
-    if (!s) return false;
-    const rate = usePlayback.getState().rate;
-    // Live: at least 20 s of playback per extension (more when runs get slow), at most 100k output steps.
-    const chunk = s.live ? Math.min(Math.max(20 * rate, 2 * leadTime(s, rate)), s.plan.step * 100_000) : s.plan.chunk;
-    const stop = Math.max(s.stop + chunk, t + chunk);
-    set({ session: { ...s, stop } });
-    return true;
-  }
-
-  /** Recorded failures and repairs after time t were computed from a future that a change just replaced. */
-  const pruneDamage = (damage: Record<string, Damage[]>, t: number): Record<string, Damage[]> => {
-    const out: Record<string, Damage[]> = {};
-    for (const [id, list] of Object.entries(damage)) {
-      const kept = list.filter((d) => d.t <= t).map((d) => (d.repairedAt != null && d.repairedAt > t ? { ...d, repairedAt: undefined } : d));
-      if (kept.length) out[id] = kept;
-    }
-    return out;
-  };
 
   return {
     status: "idle",
@@ -222,84 +305,96 @@ export const useSim = create<SimState>((set, get) => {
     startedAt: null,
     continuous: false,
     session: null,
-    resultSeq: 0,
-    rerunning: false,
+    computing: false,
+    stress: [],
     run: async (analysis) => {
       const project = useProject.getState().project;
       const kind = analysis ?? project.simulation.analysis;
       const plan = kind === "tran" ? tranPlan(project) : null;
-      await fresh(project, kind, plan ? { live: false, plan, stop: plan.stop, changes: {}, damage: {}, seq: 0, log: [] } : null);
+      await fresh(project, kind, plan ? { live: false, plan, stop: plan.stop, changes: {}, damage: {} } : null);
     },
     startLive: async () => {
       const st = useProject.getState();
       if (st.project.simulation.analysis !== "tran") st.update("Simulation settings", (d) => { d.simulation.analysis = "tran"; }, { merge: true });
       const project = useProject.getState().project;
       const plan = livePlan(project);
-      await fresh(project, "tran", { live: true, plan, stop: plan.stop, changes: {}, damage: {}, seq: 0, log: [] });
+      await fresh(project, "tran", { live: true, plan, stop: plan.stop, changes: {}, damage: {} });
     },
     change: (componentId, value, at) => {
       const s = get().session, r = get().result;
       if (!s || !r?.ok || r.analysis !== "tran") return;
       const pb = usePlayback.getState();
-      const t = Math.max(0, at ?? pb.t ?? pb.t1);
-      const seq = s.seq + 1;
-      const next: Session = { ...s, seq, changes: { ...s.changes, [componentId]: recordChange(s.changes[componentId], t, value) }, damage: pruneDamage(s.damage, t), log: [...s.log, { seq, t }] };
-      set({ session: next });
-      failChecks = 0;
-      // A change at (or past) the end needs simulated time after it.
-      if (t > pb.t1 - (next.live ? leadTime(next, pb.rate) : next.plan.chunk * 0.05)) extendTo(t);
-      void rerun();
+      const tk = restartAt(Math.max(0, at ?? pb.t ?? pb.t1));
+      if (tk == null) return;
+      // Everything recorded after the restart point belonged to a future that is now recomputed.
+      const changes: Record<string, Change[]> = {};
+      for (const [id, list] of Object.entries(s.changes)) { const kept = list.filter(([t]) => t <= tk); if (kept.length) changes[id] = kept; }
+      // Values in effect just before the change, at the restart point (a change made while the previous one is
+      // still computing keeps that one's origin: nothing has been computed since).
+      transitionFrom = transitionFrom ?? paramsAt(projectOf(), changes, tk - 1e-15);
+      changes[componentId] = recordChange(changes[componentId], tk, value);
+      params = paramsAt(projectOf(), changes, tk);
+      changeWall = performance.now();
+      firstAfterChange = true;
+      set({ session: { ...s, changes, damage: pruneDamage(s.damage, tk), lastChange: { t: tk } } });
+      void pump();
     },
     repairAll: () => {
       const s = get().session;
       if (!s || !Object.keys(s.damage).length) return;
       const pb = usePlayback.getState();
-      const t = pb.t ?? pb.t1;
+      const tk = restartAt(pb.t ?? pb.t1);
+      if (tk == null) return;
       const damage: Record<string, Damage[]> = {};
-      for (const [id, list] of Object.entries(pruneDamage(s.damage, t))) damage[id] = list.map((d) => (d.repairedAt == null ? { ...d, repairedAt: t } : d));
-      const seq = s.seq + 1;
-      set({ session: { ...s, seq, damage, log: [...s.log, { seq, t }] } });
-      failChecks = 0;
-      void rerun();
+      const repaired = new Set<string>();
+      for (const [id, list] of Object.entries(pruneDamage(s.damage, tk))) damage[id] = list.map((d) => (d.repairedAt == null ? (repaired.add(id), { ...d, repairedAt: tk }) : d));
+      // A new part starts cool: its running averages restart at 0.
+      set({ session: { ...s, damage }, stress: get().stress.map((x) => (repaired.has(x.componentId) ? { ...x, avg: [...x.avg.slice(0, -1), 0], ratio: [...x.ratio.slice(0, -1), 0] } : x)) });
+      reconnect = [...repaired];
+      firstAfterChange = true;
+      void pump();
     },
-    extend: () => { if (extendTo(usePlayback.getState().t1)) void rerun(); },
-    clearChanges: () => {
+    extend: () => {
       const s = get().session;
-      if (!s) return;
-      const seq = s.seq + 1;
-      set({ session: { ...s, seq, changes: {}, damage: {}, log: [...s.log, { seq, t: 0 }] } });
-      failChecks = 0;
-      void rerun();
+      if (!s || s.live) return;
+      set({ session: { ...s, stop: s.stop + s.plan.chunk } });
+      void pump();
     },
     stop: () => {
-      if (get().status !== "running" && !get().rerunning) return;
+      if (get().status !== "running" && !get().computing) return;
       token++;
-      pendingLive = false;
+      gen++;
       engine.stop?.();
-      set({ status: "stopped", result: null, basis: null, resultRevision: null, startedAt: null, rerunning: false, session: null });
+      set({ status: "stopped", result: null, basis: null, resultRevision: null, startedAt: null, session: null, stress: [] });
       usePlayback.getState().resetFor(null);
     },
     reset: () => {
       token++;
-      pendingLive = false;
+      gen++;
       // Terminating the worker also discards the engine state; the next run loads a fresh ngspice.
       engine.stop?.();
-      set({ status: "idle", result: null, basis: null, resultRevision: null, blocked: [], startedAt: null, rerunning: false, session: null });
+      set({ status: "idle", result: null, basis: null, resultRevision: null, blocked: [], startedAt: null, session: null, stress: [] });
       usePlayback.getState().resetFor(null);
     },
     setContinuous: (on) => { set({ continuous: on }); if (on) scheduleContinuous(); },
   };
 });
 
-/** Circuit time up to which the shown result includes every recorded change (null = all of it). */
-export const useValidUntil = () => useSim((s) => (s.session ? validUntil(s.session.log, s.resultSeq) : null));
+/** Recorded failures and repairs after time t belonged to a future that is being recomputed. */
+function pruneDamage(damage: Record<string, Damage[]>, t: number): Record<string, Damage[]> {
+  const out: Record<string, Damage[]> = {};
+  for (const [id, list] of Object.entries(damage)) {
+    const kept = list.filter((d) => d.t <= t).map((d) => (d.repairedAt != null && d.repairedAt > t ? { ...d, repairedAt: undefined } : d));
+    if (kept.length) out[id] = kept;
+  }
+  return out;
+}
 
-/** Called by playback each frame: a live session grows before playback reaches its end. */
-function maybeExtend(t: number, t1: number, rate: number) {
+/** Called by playback each frame: keep computing ahead of the playhead. */
+function keepAhead(t: number, t1: number, rate: number) {
   const sim = useSim.getState();
-  const s = sim.session;
-  if (!s?.live || sim.rerunning || !sim.result?.ok || s.stop > t1 + 1e-12) return;
-  if (t1 - t <= leadTime(s, rate)) sim.extend();
+  if (!sim.session?.live || sim.computing || sim.status !== "done") return;
+  if (t1 - t <= LEAD_SECONDS * rate * 0.75) kick();
 }
 
 // ---------------------------------------------------------------- staleness
@@ -352,8 +447,8 @@ useProject.subscribe((s, prev) => {
 // ---------------------------------------------------------------- playback
 
 /**
- * Playback of a computed transient result. ngspice computes the run first; this animates the finished
- * waveform and the on-canvas values. `rate` is circuit seconds per wall-clock second (1 = real time).
+ * Playback of computed transient results. `rate` is circuit seconds per wall-clock second (1 = real time).
+ * In live sessions the playhead never passes the computed end: it waits there while the next chunk computes.
  */
 interface PlaybackState {
   /** Current playback time in simulation seconds, or null when not in playback mode. */
@@ -363,7 +458,7 @@ interface PlaybackState {
   rate: number;
   t0: number;
   t1: number;
-  /** Playing but held at the end while a live session computes more time. */
+  /** Playing but held at the end while more is computed. */
   waiting: boolean;
   play: () => void;
   pause: () => void;
@@ -372,7 +467,7 @@ interface PlaybackState {
   /** Leave playback mode (values show the end of the run). */
   exit: () => void;
   resetFor: (r: SimResult | null) => void;
-  /** Take a re-simulated result of the same session: keep the position and keep playing. */
+  /** Take a grown or cut timeline of the same session: keep the position and keep playing. */
   adopt: (r: SimResult) => void;
 }
 
@@ -385,10 +480,11 @@ export const usePlayback = create<PlaybackState>((set, get) => {
     if (!s.playing || s.t == null) return;
     const dt = Math.min(0.25, (now - last) / 1000); // a background tab must not jump ahead
     let next = s.t + dt * s.rate;
-    maybeExtend(next, s.t1, s.rate);
+    keepAhead(next, s.t1, s.rate);
     if (next >= s.t1) {
       const sim = useSim.getState();
-      if (sim.session?.live && sim.rerunning) { set({ t: s.t1, waiting: true }); frame = raf(tick(now)); return; }
+      const more = sim.session && sim.status === "done" && (sim.session.live || s.t1 < sim.session.stop - 1e-12);
+      if (more) { set({ t: s.t1, waiting: true }); frame = raf(tick(now)); return; }
       set({ t: s.t1, playing: false, waiting: false });
       return;
     }
@@ -400,8 +496,8 @@ export const usePlayback = create<PlaybackState>((set, get) => {
     t: null, playing: false, rate: 1, t0: 0, t1: 0, waiting: false,
     play: () => {
       const s = get();
-      if (s.t1 <= s.t0) return;
-      const t = s.t == null || s.t >= s.t1 ? s.t0 : s.t;
+      if (s.t1 <= s.t0 && !useSim.getState().session?.live) return;
+      const t = s.t == null || (s.t >= s.t1 && !useSim.getState().session?.live) ? s.t0 : s.t;
       caf(frame);
       set({ t, playing: true });
       frame = raf((now) => { frame = raf(tick(now)); });

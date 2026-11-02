@@ -33,12 +33,9 @@ interface Props {
   /** Playback position (x units); draws a playhead and dims the not-yet-played part. */
   playhead?: number | null;
   /**
-   * Data with x beyond this is not drawn, measured or read by cursors (live playback: the trace grows with
-   * the playhead, and nothing past a change that is still being re-simulated is shown).
+   * Data with x beyond this is not drawn, measured or read by cursors (playback: the trace grows with the playhead).
    */
   hideAfter?: number | null;
-  /** Start of data that is being recomputed; marked on the plot. */
-  pendingFrom?: number | null;
   /** Follow the playhead with a window of this x span when the data is longer (until you zoom). */
   follow?: number | null;
   /** Zoom and cursors reset when this changes (default: when the x data changes). Live re-runs keep them. */
@@ -65,7 +62,7 @@ function cssVar(el: Element, name: string, fallback: string) {
   return getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 }
 
-export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, pendingFrom, follow, resetKey, xDiv, onSeek, measurements, height, handle }: Props) {
+export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, follow, resetKey, xDiv, onSeek, measurements, height, handle }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
@@ -126,7 +123,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
       let lo = Infinity, hi = -Infinity;
       for (const s of visible) {
         if (s.pane !== p || s.axis !== side) continue;
-        const a = Math.max(0, lowerBound(s.x, xr[0]) - 1), b = Math.min(s.x.length, lowerBound(s.x, Math.min(xr[1], pendingFrom ?? Infinity)) + 1);
+        const a = Math.max(0, lowerBound(s.x, xr[0]) - 1), b = Math.min(s.x.length, lowerBound(s.x, xr[1]) + 1);
         for (let i = a; i < b; i++) { const v = s.y[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
       }
       if (!Number.isFinite(lo)) { lo = -1; hi = 1; }
@@ -212,18 +209,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
       } else { path(); ctx.stroke(); }
       ctx.restore();
     }
-    if (pendingFrom != null && !forExport) {
-      const px = xToPx(pendingFrom);
-      if (px <= M.left + plotW) {
-        const x0 = Math.max(M.left, px);
-        ctx.save(); ctx.fillStyle = cssVar(el, "--accent", "#4fc3f7"); ctx.globalAlpha = 0.08;
-        ctx.fillRect(x0, M.top, M.left + plotW - x0, bottom - M.top);
-        ctx.globalAlpha = 1; ctx.fillStyle = text; ctx.textAlign = "left"; ctx.textBaseline = "top";
-        ctx.fillText("re-simulating from 0 s with your change…", x0 + 4, M.top + 4);
-        ctx.restore();
-      }
-    }
-  }, [width, height, panes, xr, xLog, plotW, paneH, yRanges, decimated, xToPx, xUnit, xLabel, playhead, lim, pendingFrom, xDiv]);
+  }, [width, height, panes, xr, xLog, plotW, paneH, yRanges, decimated, xToPx, xUnit, xLabel, playhead, lim, xDiv]);
 
   const drawOverlay = useCallback((ctx: CanvasRenderingContext2D) => {
     const el = overRef.current!;

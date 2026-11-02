@@ -15,7 +15,7 @@ import { resultToCsv, safeFileName, saveText, savePng } from "./exporting";
 import { addSaves, planCurrentSaves, PROBE_COLORS } from "./probes";
 import { autoRate, defaultRate, displayLimit, hasLiveParts, RATES } from "./live";
 import { acSources, sourceFrequencies, suggestAc, suggestTran, validateSetup } from "./setup";
-import { HISTORY_SECONDS, usePlayback, useRunProject, useSim, useStaleness, useValidUntil } from "./store";
+import { HISTORY_SECONDS, usePlayback, useRunProject, useSim, useStaleness } from "./store";
 import { damageText, stressTracks } from "./stress";
 import { allTraces, magDb, phaseDeg, probeTraces, type Trace } from "./traces";
 import "./sim.css";
@@ -110,7 +110,7 @@ export function SimPanel() {
 function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: () => void }) {
   const project = useProject((s) => s.project);
   const update = useProject((s) => s.update);
-  const { status, result, run, stop, reset, continuous, setContinuous, startedAt, startLive, rerunning } = useSim();
+  const { status, result, run, stop, reset, continuous, setContinuous, startedAt, startLive } = useSim();
   const stale = useStaleness();
   const [, force] = useState(0);
   useEffect(() => { if (status !== "running") return; const id = setInterval(() => force((n) => n + 1), 250); return () => clearInterval(id); }, [status]);
@@ -120,7 +120,6 @@ function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: (
   const liveParts = useMemo(() => hasLiveParts(project), [project]);
   const operable = useMemo(() => project.schematic.components.some((c) => getPart(c.type)?.interactive), [project]);
   const label = status === "running" ? `Simulating… ${((Date.now() - (startedAt ?? Date.now())) / 1000).toFixed(1)} s`
-    : rerunning ? "Re-simulating from 0 s with your changes…"
     : status === "done" ? `Done in ${result?.elapsedMs} ms`
     : status === "failed" ? "Failed: no results (see problems)"
     : status === "stopped" ? "Stopped: engine terminated, no results kept" : "Ready";
@@ -245,8 +244,7 @@ function ProbesSection() {
   const selection = useProject((s) => s.selection);
   const result = useSim((s) => s.result);
   const tPlay = usePlayback((s) => s.t);
-  const valid = useValidUntil();
-  const t = displayLimit(tPlay, valid);
+  const t = displayLimit(tPlay, null);
   const runProject = useRunProject();
   const conn = useMemo(() => computeConnectivity(project), [project]);
   const refOf = (id: string) => project.schematic.components.find((c) => c.id === id)?.ref ?? "?";
@@ -435,7 +433,6 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
   const t = usePlayback((s) => s.t);
   const seek = usePlayback((s) => s.seek);
   const rate = usePlayback((s) => s.rate);
-  const valid = useValidUntil();
   const basis = useSim((s) => s.basis); // replaced only by a fresh Run/Live, not by live re-runs
   const [div, setDiv] = useState<number | "auto">("auto");
   const x = result.x!.real;
@@ -462,7 +459,7 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
         <span className="dim small">{t != null ? `Scrolling: ${DIVS} divisions = ${formatSI(DIVS * perDiv, "s", 3)} on screen` : "Showing the whole run (playback off)"}</span>
       </div>
       <Plot handle={plotRef} series={series} panes={panes} xUnit="s" xLabel="time" playhead={t} onSeek={(v) => seek(v)} measurements height={height}
-        hideAfter={displayLimit(t, valid)} pendingFrom={valid} follow={t != null ? DIVS * perDiv : null} xDiv={t != null ? perDiv : undefined} resetKey={basis} />
+        hideAfter={displayLimit(t, null)} follow={t != null ? DIVS * perDiv : null} xDiv={t != null ? perDiv : undefined} resetKey={basis} />
     </>
   );
 }
@@ -500,8 +497,8 @@ function TimeDial() {
 function PlaybackBar() {
   const { t, playing, t0, t1, waiting, play, pause, seek, exit } = usePlayback();
   const session = useSim((s) => s.session);
-  const rerunning = useSim((s) => s.rerunning);
-  const { clearChanges, extend, repairAll } = useSim.getState();
+  const computing = useSim((s) => s.computing);
+  const { extend, repairAll } = useSim.getState();
   const operable = useProject((s) => s.project.schematic.components.some((c) => getPart(c.type)?.interactive));
   const stale = useStaleness();
   const span = t1 - t0;
@@ -522,22 +519,21 @@ function PlaybackBar() {
           onChange={(e) => seek(t0 + Number(e.target.value) / 1000 * span)} />
         <span className="mono small">{formatSI(pos, "s", 4)} / {formatSI(t1, "s", 4)}</span>
         {t != null && <button className="btn sm" onClick={exit} title="Show the end-of-run values">Exit playback</button>}
-        {session && !session.live && t != null && t >= t1 && <button className="btn sm" onClick={extend} title="Re-simulate from 0 s with a longer stop time (your changes included)">Simulate further</button>}
+        {session && !session.live && !computing && t != null && t >= t1 && <button className="btn sm" onClick={extend} title="Continue the run from where it ended">Simulate further</button>}
       </div>
       <TimeDial />
       <div className="playback-notes small">
         {session?.live
-          ? <span className="dim" title="Every extension re-simulates the whole run from 0 s with your changes; only the recent part is kept for display.">
-              Live: ngspice computes ahead of the playhead and keeps going until you pause. The last {HISTORY_SECONDS} s of playback are kept for the scope.
+          ? <span className="dim" title="Each chunk is a real ngspice run that continues from the circuit's exact state (every node voltage and inductor current) at the end of the previous one.">
+              Live: ngspice computes short chunks ahead of the playhead, each continuing from the circuit's state, until you pause. The last {HISTORY_SECONDS} s of playback are kept for the scope.
             </span>
           : <span className="dim" title="ngspice computes a run before it is shown; playback only replays it.">Playback of a finished ngspice run.</span>}
         {session && operable && !stale.any && nChanges === 0 && <span>Click switches and buttons, drag potentiometers on the schematic while it plays.</span>}
         {session && operable && stale.any && <span className="warn">The schematic changed: run again to operate parts.</span>}
-        {nChanges > 0 && <span className="live-note">
-          Re-simulated from 0 s with your changes at the times you made them ({nChanges} change{nChanges > 1 ? "s" : ""}).{" "}
-          <button className="btn sm" onClick={clearChanges} title="Forget the recorded changes and re-simulate with the parts' own settings">Clear changes</button>
+        {session?.lastChange && nChanges > 0 && <span className="live-note" role="status">
+          Your change applies from {formatSI(session.lastChange.t, "s", 4)}, continuing from the circuit's state at that moment
+          {session.lastChange.latencyMs != null ? ` (shown ${session.lastChange.latencyMs} ms later)` : " (computing…)"}.
         </span>}
-        {rerunning && !waiting && <span className="live-note">Re-simulating from 0 s… nothing after your change is shown until it finishes.</span>}
         {waiting && <span className="live-note" role="status">Computing… (the simulation can't keep up at this speed; playback waits for it)</span>}
       </div>
       {damage.length > 0 && (
@@ -545,7 +541,7 @@ function PlaybackBar() {
           <div className="damage-head">
             <b>💥 Component damage</b>
             <span className="dim small">Failed parts are modeled as open circuits from the failure time; real failures vary.</span>
-            {broken && <button className="btn sm" onClick={repairAll} title="Replace the failed parts at the current playback time and re-simulate (they fail again if nothing changes)">Repair all parts</button>}
+            {broken && <button className="btn sm" onClick={repairAll} title="Replace the failed parts at the current playback time and continue (they fail again if nothing changes)">Repair all parts</button>}
           </div>
           <DiagnosticList diags={damage} compact />
         </div>

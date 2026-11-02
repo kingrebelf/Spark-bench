@@ -10,7 +10,7 @@ import type { ComponentDef, ComponentInstance, SimResult } from "../core/types";
 import { interpolate } from "../scope/measure";
 import { displayLimit } from "./live";
 import { grabBox, liveEnabled, liveValue, wiperY } from "./interact";
-import { usePlayback, useRunProject, useSim, useStaleness, useValidUntil } from "./store";
+import { usePlayback, useRunProject, useSim, useStaleness } from "./store";
 import { failedAt, stressTracks, WARN_FRACTION } from "./stress";
 
 const LED_RGB: Record<string, string> = {
@@ -35,11 +35,10 @@ export function LiveParts() {
   const result = useSim((s) => s.result);
   useSim((s) => s.session); // re-render when changes are recorded
   const t = usePlayback((s) => s.t);
-  const valid = useValidUntil();
   const stale = useStaleness();
   const enabled = liveEnabled();
   // Results are only shown up to the earliest change not yet re-simulated.
-  const tShow = result?.analysis === "tran" ? displayLimit(t, valid) : null;
+  const tShow = result?.analysis === "tran" ? displayLimit(t, null) : null;
 
   const parts: { c: ComponentInstance; def: ComponentDef }[] = [];
   for (const c of comps) { const def = getPart(c.type); if (def?.interactive || def?.indicator) parts.push({ c, def: def! }); }
@@ -125,11 +124,13 @@ function StressMarks() {
   const comps = useProject((s) => s.project.schematic.components);
   const t = usePlayback((s) => s.t);
   const rate = usePlayback((s) => s.rate);
-  const valid = useValidUntil();
-  const tracks = useMemo(() => (result?.ok ? stressTracks(runProject, result, damage ?? {}) : []), [runProject, result, damage]);
+  // Transient sessions keep running averages across chunks in the store; op results get static ratios here.
+  const series = useSim((s) => s.stress);
+  const opTracks = useMemo(() => (result?.ok && result.analysis === "op" ? stressTracks(runProject, result, damage ?? {}) : []), [runProject, result, damage]);
+  const tracks: { componentId: string; ref: string; kind: string; ratio: ArrayLike<number> }[] = result?.analysis === "tran" ? series : opTracks;
   if (!tracks.length && !damage) return null;
   const x = result?.analysis === "tran" ? result.x?.real : undefined;
-  const tShow = x ? displayLimit(t, valid) ?? x[x.length - 1] : 0;
+  const tShow = x ? displayLimit(t, null) ?? x[x.length - 1] : 0;
   const worst = new Map<string, { ratio: number; ref: string; kind: string }>();
   for (const tr of tracks) {
     const r = x ? interpolate(x, tr.ratio, tShow) : tr.ratio[0];

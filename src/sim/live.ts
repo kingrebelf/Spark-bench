@@ -1,9 +1,9 @@
 // Live interactive simulation: pure helpers.
 //
-// Live mode is a transient run played back in (scaled) real time. When the user operates a switch,
-// button or potentiometer on the canvas, the change is recorded with the playback time and the WHOLE
-// transient is re-simulated from t = 0 with every recorded change (one exact ngspice run, nothing stitched).
-// Until that run returns, data after the earliest unapplied change is never shown.
+// Live mode is a transient run played back in (scaled) real time, computed in short chunks ahead of the
+// playhead; each chunk is a real ngspice run that continues from the circuit's state (chunk.ts). When the user
+// operates a switch, button or potentiometer on the canvas, the run continues from the circuit's state at that
+// moment with the new value. `toPwl` and `edgeFor` serve the parts' schedule hook (SpiceEmitContext.schedule).
 import { computeConnectivity } from "../core/connectivity";
 import { getPart } from "../core/library";
 import { formatSI, parseSI } from "../core/units";
@@ -58,17 +58,7 @@ export function recordChange(changes: Change[] | undefined, t: number, v: number
   return [...(changes ?? []).filter(([ct]) => ct < t), [t, v]];
 }
 
-/**
- * How far the shown result may be displayed: the earliest change made after the result's run started,
- * or null when the result already includes every change.
- */
-export function validUntil(log: { seq: number; t: number }[], resultSeq: number): number | null {
-  let m: number | null = null;
-  for (const e of log) if (e.seq > resultSeq && (m == null || e.t < m)) m = e.t;
-  return m;
-}
-
-/** Where display of data must stop: the playhead, or the earliest unapplied change if that is earlier. */
+/** Where display of data must stop: the playhead, or an earlier limit if one is given. */
 export function displayLimit(t: number | null, valid: number | null): number | null {
   if (t == null) return valid;
   return valid == null ? t : Math.min(t, valid);

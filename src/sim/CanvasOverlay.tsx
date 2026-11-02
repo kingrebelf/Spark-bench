@@ -10,14 +10,13 @@ import { interpolate } from "../scope/measure";
 import { displayLimit } from "./live";
 import { LiveParts } from "./LiveParts";
 import { resolveProbes, vectorForProbe } from "./probes";
-import { usePlayback, useRunProject, useSim, useStaleness, useValidUntil } from "./store";
+import { usePlayback, useRunProject, useSim, useStaleness } from "./store";
 import { probeLabel } from "./traces";
 
 export function SimCanvasOverlay() {
   const project = useProject((s) => s.project);
   const result = useSim((s) => s.result);
   const t = usePlayback((s) => s.t);
-  const valid = useValidUntil();
   const stale = useStaleness();
   const conn = useMemo(() => computeConnectivity(project), [project]);
   const probes = useMemo(() => resolveProbes(project, conn), [project, conn]);
@@ -26,8 +25,8 @@ export function SimCanvasOverlay() {
   const atRun = useMemo(() => new Map(resolveProbes(runProject).map((r) => [r.probe.id, r])), [runProject]);
   if (!probes.length) return <LiveParts />;
   // Never show values past the earliest change that is still being re-simulated.
-  const tShow = displayLimit(t, valid);
-  const pendingAt = valid != null && t != null && t > valid;
+  // The playhead never passes the computed end (live sessions wait there for the next chunk).
+  const tShow = displayLimit(t, null);
 
   // Labels stack upward when they would overlap an earlier one.
   const placed: { x: number; y: number; w: number }[] = [];
@@ -51,7 +50,7 @@ export function SimCanvasOverlay() {
           if (result.analysis === "op") value = formatSI(v.real[0], v.unit, 3);
           else if (result.analysis === "tran" && result.x) {
             const time = tShow ?? result.x.real[result.x.real.length - 1];
-            value = pendingAt ? "… re-simulating" : formatSI(interpolate(result.x.real, v.real, time), v.unit, 3) + (t == null ? " (end)" : "");
+            value = formatSI(interpolate(result.x.real, v.real, time), v.unit, 3) + (t == null ? " (end)" : "");
           }
         }
         if (r.problem) value = "no target";

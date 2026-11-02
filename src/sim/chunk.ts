@@ -10,6 +10,7 @@ import { getPart } from "../core/library";
 import type { SpiceEngine } from "../core/simulate";
 import { toSpiceNumber } from "../core/units";
 import type { Project, SimResult, Vector } from "../core/types";
+import { edgeFor } from "./live";
 import { runSimulation } from "./run";
 import { siText } from "./setup";
 import type { Damage } from "./stress";
@@ -77,6 +78,14 @@ export interface ChunkOptions {
   params?: Record<string, number>;
   /** Parts that are open (failed) for the whole chunk. */
   open?: string[];
+  /**
+   * Values in effect just before this chunk, for parts whose value changes at its start. The change is made
+   * inside the chunk over a short edge (the parts' schedule hook) instead of as an abrupt initial condition,
+   * so ngspice's time-step control handles it like any other fast edge.
+   */
+  from?: Record<string, number>;
+  /** Repaired parts: open at the chunk start, reconnected over a short edge. */
+  reconnect?: string[];
   /** Solver state to start from (null: a normal run from the DC operating point). */
   state?: ChunkState | null;
 }
@@ -96,10 +105,17 @@ export function chunkProject(project: Project, o: ChunkOptions): Project {
 /** Run one chunk. The result's time axis is absolute circuit time (t0 + SPICE time). */
 export async function runChunk(project: Project, engine: SpiceEngine, o: ChunkOptions): Promise<SimResult> {
   const p = chunkProject(project, o);
+  const edge = edgeFor(o.step);
   const damage: Record<string, Damage[]> = {};
   for (const id of o.open ?? []) damage[id] = [{ t: 0, message: "", fix: "" }];
+  for (const id of o.reconnect ?? []) damage[id] = [{ t: -1, repairedAt: edge, message: "", fix: "" }];
+  const schedules = new Map<string, [number, number][]>();
+  for (const [id, v] of Object.entries(o.params ?? {})) {
+    const before = o.from?.[id];
+    if (before != null && before !== v && o.state) schedules.set(id, [[o.t0, before], [o.t0 + edge, v]]); // absolute circuit time
+  }
   const state = o.state ?? null;
-  const r = await runSimulation(p, engine, "tran", { timeOffset: o.t0, damage, staticOpen: true, transform: (t) => applyInitialState(t, state) });
+  const r = await runSimulation(p, engine, "tran", { timeOffset: o.t0, schedules, damage, staticOpen: true, transform: (t) => applyInitialState(t, state) });
   if (r.ok && r.x && o.t0) r.x = { ...r.x, real: r.x.real.map((t) => t + o.t0) };
   return r;
 }

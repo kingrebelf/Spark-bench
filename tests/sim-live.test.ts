@@ -4,7 +4,7 @@ import { Builder, engine } from "./helpers";
 import { generateNetlist } from "../src/core/netlist";
 import { runSimulation } from "../src/sim/run";
 import { interpolate } from "../src/scope/measure";
-import { autoRate, displayLimit, livePlan, recordChange, toPwl, validUntil, valueAt, niceRate, defaultRate, RATES } from "../src/sim/live";
+import { autoRate, livePlan, recordChange, toPwl, valueAt, niceRate, defaultRate, RATES } from "../src/sim/live";
 import type { Project, SimResult } from "../src/core/types";
 import type { EngineOutput, SpiceEngine } from "../src/core/simulate";
 import { useProject } from "../src/core/store";
@@ -66,16 +66,6 @@ describe("live schedules", () => {
     expect(valueAt(0, c, 3.5)).toBe(0);
     c = recordChange(c, 2, 0); // went back to t=2 and changed it: the t=3 change is gone
     expect(c).toEqual([[1, 1], [2, 0]]);
-  });
-
-  it("never lets data past an unapplied change be displayed", () => {
-    const log = [{ seq: 1, t: 0.004 }, { seq: 2, t: 0.002 }, { seq: 3, t: 0.007 }];
-    expect(validUntil(log, 3)).toBeNull();
-    expect(validUntil(log, 1)).toBe(0.002); // result computed with change 1 only: changes 2, 3 pending
-    expect(validUntil(log, 2)).toBe(0.007);
-    expect(displayLimit(0.009, validUntil(log, 1))).toBe(0.002);
-    expect(displayLimit(0.001, validUntil(log, 1))).toBe(0.001);
-    expect(displayLimit(null, null)).toBeNull();
   });
 
   it("emits a PWL-controlled switch only in live mode; the static netlist is unchanged", () => {
@@ -155,115 +145,134 @@ describe("live time scale", () => {
   });
 });
 
-/** Node engine whose runs wait for `release()`, to look at the store while a re-run is in flight. */
-class GatedEngine implements SpiceEngine {
-  gate: Promise<void> = Promise.resolve();
-  private open: () => void = () => {};
-  hold() { this.gate = new Promise((r) => { this.open = r; }); }
-  release() { this.open(); }
-  async run(netlist: string): Promise<EngineOutput> { await this.gate; return engine().run(netlist); }
-  stop() { /* nothing to terminate in Node */ }
+/** Node engine that counts runs and terminations (a drag must never terminate the worker). */
+class CountingEngine implements SpiceEngine {
+  runs = 0;
+  stops = 0;
+  async run(netlist: string): Promise<EngineOutput> { this.runs++; return engine().run(netlist); }
+  stop() { this.stops++; }
 }
 
-describe("live session in the store", () => {
-  it("records a toggle at the playhead, hides data past it until the re-run lands, then shows the new run", async () => {
-    const { b, S } = ledSwitch();
-    useProject.getState().load(b.project);
-    const eng = new GatedEngine();
-    setSimEngine(eng);
-    await useSim.getState().run("tran");
-    usePlayback.getState().pause();
-    const first = useSim.getState().result!;
-    expect(first.ok).toBe(true);
-    expect(useSim.getState().session?.live).toBe(false);
-    expect(ledI(first, 8e-3)).toBeLessThan(1e-6);
-
-    usePlayback.getState().seek(5e-3);
-    eng.hold();
-    useSim.getState().change(S.id, 1);
-    let st = useSim.getState();
-    expect(st.rerunning).toBe(true);
-    expect(st.result).toBe(first); // the old run stays shown…
-    const valid = validUntil(st.session!.log, st.resultSeq);
-    expect(valid).toBeCloseTo(5e-3, 12); // …but only up to the change
-    expect(displayLimit(9e-3, valid)).toBeCloseTo(5e-3, 12);
-
-    eng.release();
-    await new Promise<void>((r) => { const u = useSim.subscribe((x) => { if (!x.rerunning) { u(); r(); } }); });
-    st = useSim.getState();
-    expect(validUntil(st.session!.log, st.resultSeq)).toBeNull();
-    expect(st.result).not.toBe(first);
-    expect(Math.abs(ledI(st.result!, 4e-3))).toBeLessThan(1e-6);
-    expect(ledI(st.result!, 6e-3)).toBeGreaterThan(5e-3);
-    expect(st.result!.netlist).toMatch(/PWL\(/);
-    expect(usePlayback.getState().t).toBeCloseTo(5e-3, 12); // playback position kept
-    useSim.getState().reset();
-  }, 60_000);
-
-  it("a change at the end of the run extends the stop time", async () => {
-    const { b, S } = ledSwitch();
-    useProject.getState().load(b.project);
-    setSimEngine(engine());
-    await useSim.getState().run("tran");
-    usePlayback.getState().pause();
-    const t1 = usePlayback.getState().t1;
-    usePlayback.getState().seek(t1);
-    useSim.getState().change(S.id, 1);
-    expect(useSim.getState().session!.stop).toBeGreaterThan(t1);
-    await new Promise<void>((r) => { const u = useSim.subscribe((x) => { if (!x.rerunning) { u(); r(); } }); });
-    const r = useSim.getState().result!;
-    expect(r.x!.real[r.x!.real.length - 1]).toBeGreaterThan(t1 * 1.5);
-    expect(ledI(r, t1 * 1.4)).toBeGreaterThan(5e-3);
-    useSim.getState().reset();
-  }, 60_000);
-});
-
-/** Wait until no re-run is in flight or pending for a few polls. */
+/** Wait until no chunk is being computed for a few polls. */
 async function settle() {
   let quiet = 0;
-  for (let i = 0; i < 500 && quiet < 4; i++) {
-    await new Promise((r) => setTimeout(r, 20));
-    quiet = useSim.getState().rerunning ? 0 : quiet + 1;
+  for (let i = 0; i < 1000 && quiet < 4; i++) {
+    await new Promise((r) => setTimeout(r, 15));
+    quiet = useSim.getState().computing || useSim.getState().status === "running" ? 0 : quiet + 1;
   }
 }
+const endOf = () => { const x = useSim.getState().result!.x!.real; return x[x.length - 1]; };
 
-describe("session extension and damage in the store", () => {
-  it("extending the run keeps the recorded schedule (re-simulated from 0 s, longer)", async () => {
+describe("chunked live session in the store", () => {
+  it("a toggle continues from the last real timepoint at or before the playhead; earlier data is untouched", async () => {
     const { b, S } = ledSwitch();
     useProject.getState().load(b.project);
     setSimEngine(engine());
     await useSim.getState().run("tran");
     usePlayback.getState().pause();
+    await settle();
+    const first = useSim.getState().result!;
+    const x0 = first.x!.real;
+    expect(ledI(first, 8e-3)).toBeLessThan(1e-6);
     usePlayback.getState().seek(5e-3);
     useSim.getState().change(S.id, 1);
-    await settle();
-    useSim.getState().extend();
+    // cut at once at a sample of the old run, no later than the playhead
+    const s = useSim.getState().session!;
+    expect(s.lastChange!.t).toBeLessThanOrEqual(5e-3);
+    expect(x0).toContain(s.lastChange!.t);
+    expect(endOf()).toBe(s.lastChange!.t);
     await settle();
     const r = useSim.getState().result!;
-    expect(r.x!.real[r.x!.real.length - 1]).toBeCloseTo(20e-3, 6);
-    expect(Math.abs(ledI(r, 4e-3))).toBeLessThan(1e-6);
-    expect(ledI(r, 15e-3)).toBeGreaterThan(5e-3); // still closed in the extended part
+    expect(endOf()).toBeCloseTo(10e-3, 9);
+    expect(ledI(r, 3e-3)).toBe(ledI(first, 3e-3)); // the past is not recomputed
+    expect(Math.abs(ledI(r, 4.9e-3))).toBeLessThan(1e-6);
+    expect(ledI(r, 6e-3)).toBeGreaterThan(5e-3);
+    expect(useSim.getState().session!.lastChange!.latencyMs).toBeGreaterThanOrEqual(0);
     useSim.getState().reset();
   }, 60_000);
 
-  it("an LED straight on 9 V burns out, is re-simulated as open, and Repair all reconnects it at the playhead", async () => {
-    const b = new Builder();
-    const V = b.place("vdc", "V1", 0, 10, { value: "9" });
-    const D = b.place("led", "D1", 20, 10, { color: "red" });
-    const G = b.place("ground", "#PWR1", 40, 10);
-    b.label("top", b.pin(V, "1")).label("top", b.pin(D, "A"));
-    b.label("gnd", b.pin(D, "K")).label("gnd", b.pin(V, "2")).label("gnd", b.pin(G, "1"));
-    b.project.simulation.tran = { stop: "100m", step: "100u" };
+  it("a live session keeps computing ahead of the playhead while it plays, with no gaps", async () => {
+    const { b } = ledSwitch();
     useProject.getState().load(b.project);
+    setSimEngine(engine());
+    await useSim.getState().startLive();
+    await new Promise((r) => setTimeout(r, 2500));
+    const t = usePlayback.getState().t!;
+    usePlayback.getState().pause();
+    await settle();
+    expect(t).toBeGreaterThan(1.5); // real time
+    expect(endOf()).toBeGreaterThan(t);
+    const x = useSim.getState().result!.x!.real;
+    for (let i = 1; i < x.length; i++) expect(x[i]).toBeGreaterThan(x[i - 1]);
+    useSim.getState().reset();
+  }, 60_000);
+
+  it("a burst of pot changes is coalesced, never terminates the engine, and the latest value wins", async () => {
+    const { b, P } = potDivider("50");
+    useProject.getState().load(b.project);
+    const eng = new CountingEngine();
+    setSimEngine(eng);
+    await useSim.getState().startLive();
+    usePlayback.getState().pause();
+    await settle();
+    usePlayback.getState().seek(0.5);
+    for (let v = 55; v <= 90; v += 5) useSim.getState().change(P.id, v);
+    await settle();
+    expect(eng.stops).toBe(0);
+    const r = useSim.getState().result!;
+    const tk = useSim.getState().session!.lastChange!.t;
+    expect(at(r, (n) => n === "v(out)", tk / 2)).toBeCloseTo(5, 2);
+    expect(at(r, (n) => n === "v(out)", tk + 0.05)).toBeCloseTo(9, 2);
+    useSim.getState().reset();
+  }, 60_000);
+
+  it("damage averages carry across chunks: a sustained overload fails at the same time as in one run", async () => {
+    // 12 V -> SW1 -> 100 Ω rated 0.85 W: closed, 1.44 W fails after 0.5 s · ln(1.44 / 0.59) ≈ 0.45 s,
+    // longer than any one chunk (a per-chunk average would never reach the limit).
+    const bld = new Builder();
+    const V = bld.place("vdc", "V1", 0, 10, { value: "12" });
+    const S = bld.place("switch_spst", "SW1", 20, 10);
+    const R = bld.place("resistor", "R1", 40, 10, { value: "100", power: "0.85" });
+    const G = bld.place("ground", "#PWR1", 60, 10);
+    bld.label("top", bld.pin(V, "1")).label("top", bld.pin(S, "1")).label("a", bld.pin(S, "2")).label("a", bld.pin(R, "1"));
+    bld.label("gnd", bld.pin(R, "2")).label("gnd", bld.pin(V, "2")).label("gnd", bld.pin(G, "1"));
+    useProject.getState().load(bld.project);
+    setSimEngine(engine());
+    await useSim.getState().startLive();
+    usePlayback.getState().pause();
+    await settle();
+    usePlayback.getState().seek(0.3);
+    useSim.getState().change(S.id, 1);
+    const tClose = useSim.getState().session!.lastChange!.t;
+    // advance the playhead so the session computes well past the failure
+    for (const t of [0.6, 0.9, 1.2]) { usePlayback.getState().seek(Math.min(t, endOf())); await settle(); usePlayback.getState().play(); usePlayback.getState().pause(); }
+    await settle();
+    const d = useSim.getState().session!.damage[R.id];
+    expect(d, "R1 failed").toHaveLength(1);
+    expect(d[0].t - tClose).toBeGreaterThan(0.43);
+    expect(d[0].t - tClose).toBeLessThan(0.47);
+    expect(d[0].message).toMatch(/R1 dissipated 1\.44 W \(rated 850 mW\)/);
+    useSim.getState().reset();
+  }, 60_000);
+
+  it("an LED straight on 9 V burns out, stays open, and Repair all reconnects it at the playhead", async () => {
+    const bld = new Builder();
+    const V = bld.place("vdc", "V1", 0, 10, { value: "9" });
+    const D = bld.place("led", "D1", 20, 10, { color: "red" });
+    const G = bld.place("ground", "#PWR1", 40, 10);
+    bld.label("top", bld.pin(V, "1")).label("top", bld.pin(D, "A"));
+    bld.label("gnd", bld.pin(D, "K")).label("gnd", bld.pin(V, "2")).label("gnd", bld.pin(G, "1"));
+    bld.project.simulation.tran = { stop: "100m", step: "100u" };
+    useProject.getState().load(bld.project);
     setSimEngine(engine());
     await useSim.getState().run("tran");
     usePlayback.getState().pause();
     await settle();
     let st = useSim.getState();
+    expect(endOf()).toBeCloseTo(0.1, 9);
     const dmg = st.session!.damage[D.id];
     expect(dmg).toHaveLength(1);
     expect(dmg[0].t).toBeLessThan(1e-3);
-    expect(validUntil(st.session!.log, st.resultSeq)).toBeNull();
     const i = (t: number) => interpolate(st.result!.x!.real, st.result!.vectors.find((v) => v.componentId === D.id && v.kind === "current")!.real, t);
     expect(Math.abs(i(0.05))).toBeLessThan(1e-6);
 
@@ -272,10 +281,10 @@ describe("session extension and damage in the store", () => {
     await settle();
     st = useSim.getState();
     const list = st.session!.damage[D.id];
-    expect(list[0].repairedAt).toBeCloseTo(0.05, 9);
+    expect(list[0].repairedAt).toBeLessThanOrEqual(0.05);
     expect(list).toHaveLength(2); // fails again right after the repair: nothing limits the current
-    expect(list[1].t).toBeGreaterThan(0.05);
-    expect(list[1].t).toBeLessThan(0.052);
+    expect(list[1].t).toBeGreaterThan(list[0].repairedAt!);
+    expect(list[1].t - list[0].repairedAt!).toBeLessThan(2e-3);
     useSim.getState().reset();
   }, 60_000);
 });

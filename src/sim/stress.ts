@@ -36,12 +36,12 @@ const VERB: Record<RatingKind, string> = { current: "carried", power: "dissipate
 export interface Damage { t: number; repairedAt?: number; message: string; fix: string }
 
 /** Exponential moving average on a non-uniform time grid (y starts at the first value, or at 0 after `resetAt`). */
-export function ema(x: ArrayLike<number>, v: ArrayLike<number>, tau: number, resetAt: number[] = []): Float64Array {
+export function ema(x: ArrayLike<number>, v: ArrayLike<number>, tau: number, resetAt: number[] = [], y0 = 0): Float64Array {
   const out = new Float64Array(x.length);
   let y = 0, r = 0;
   const resets = [...resetAt].sort((a, b) => a - b);
   for (let i = 0; i < x.length; i++) {
-    if (i === 0) y = 0;
+    if (i === 0) y = y0;
     else {
       const a = 1 - Math.exp(-Math.max(0, x[i] - x[i - 1]) / tau);
       y += a * (v[i] - y);
@@ -84,7 +84,9 @@ function limitOf(c: ComponentInstance, def: ComponentDef, r: NonNullable<Compone
 }
 
 /** Stress for every rated part in a result (transient: averaged series; op: the static value). */
-export function stressTracks(project: Project, result: SimResult, damage: Record<string, Damage[]> = {}, conn: Connectivity = computeConnectivity(project)): StressTrack[] {
+export function stressTracks(project: Project, result: SimResult, damage: Record<string, Damage[]> = {}, conn: Connectivity = computeConnectivity(project),
+  /** Running averages to continue from (chunked live mode), keyed `${componentId}:${kind}`. */
+  initial: Record<string, number> = {}): StressTrack[] {
   if (!result.ok || (result.analysis !== "tran" && result.analysis !== "op")) return [];
   const n = result.analysis === "op" ? 1 : result.x?.real.length ?? 0;
   if (!n) return [];
@@ -119,7 +121,9 @@ export function stressTracks(project: Project, result: SimResult, damage: Record
       if (!ok) continue;
       const tau = r.kind === "current" && AVERAGE_RATED.has(def.id) ? 1 : STRESS_TAU[r.kind];
       const limit = limitOf(c, def, r);
-      const avg = result.analysis === "op" ? raw : ema(x, raw, tau, (damage[c.id] ?? []).flatMap((d) => (d.repairedAt != null ? [d.repairedAt] : [])));
+      // Repairs reset the average; one before this result's start is already in `initial`.
+      const resets = (damage[c.id] ?? []).flatMap((d) => (d.repairedAt != null && d.repairedAt > x[0] ? [d.repairedAt] : []));
+      const avg = result.analysis === "op" ? raw : ema(x, raw, tau, resets, initial[`${c.id}:${r.kind}`] ?? 0);
       const ratio = new Float64Array(n);
       for (let i = 0; i < n; i++) ratio[i] = avg[i] / limit;
       out.push({ componentId: c.id, ref: c.ref, kind: r.kind, limit, tau, ratio, avg, raw });
@@ -211,13 +215,17 @@ export function applyFailures(netlist: string, nl: NetlistResult, project: Proje
       lines[i] = tok.join(" ");
     }
     if (!touched) continue;
-    if (staticOpen) { extra.push(`Rsbf_${u} ${net} ${inner} 1e9`); continue; }
-    const pts: [number, number][] = [[0, 1]];
+    // Open for the whole run (chunked live mode): a plain 1 GΩ instead of a timed switch.
+    if (staticOpen && damage[id].every((d) => d.repairedAt == null)) { extra.push(`Rsbf_${u} ${net} ${inner} 1e9`); continue; }
+    // A failure at t < 0 means "already open when this run starts" (a chunk that reconnects a repaired part).
+    const pts: [number, number][] = [[0, damage[id].some((d) => d.t < 0) ? 0 : 1]];
     let last = 0;
     for (const d of [...damage[id]].sort((a, b) => a.t - b.t)) {
-      const tf = Math.max(d.t, last + edge);
-      pts.push([tf, 1], [tf + edge, 0]);
-      last = tf + edge;
+      if (d.t >= 0) {
+        const tf = Math.max(d.t, last + edge);
+        pts.push([tf, 1], [tf + edge, 0]);
+        last = tf + edge;
+      }
       if (d.repairedAt != null) { const tr = Math.max(d.repairedAt, last + edge); pts.push([tr, 0], [tr + edge, 1]); last = tr + edge; }
     }
     extra.push(`Ssbf_${u} ${net} ${inner} sbfc_${u} 0 SBF_SW`, `Vsbfc_${u} sbfc_${u} 0 PWL(${pts.map(([t, v]) => `${t.toExponential(9)} ${v}`).join(" ")})`);
