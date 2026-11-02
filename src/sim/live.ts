@@ -121,13 +121,13 @@ export function rcTimeConstant(project: Project, lookup = getPart): number | nul
 /**
  * Playback rate that makes the circuit's action visible: about two periods of the slowest source per second,
  * else about half the slowest RC time constant per second; null when the circuit sets no time scale.
- * Capped at 10 s per second.
+ * Capped at 10 s per second for sources, and at real time for RC-paced circuits (a 555 never plays faster than life).
  */
 export function autoRate(project: Project, lookup = getPart): number | null {
   const fs = sourceFrequencies(project, lookup);
   if (fs.length) return Math.min(10, niceRate(2 / Math.min(...fs.map((f) => f.f))));
   const tau = rcTimeConstant(project, lookup);
-  return tau ? Math.min(10, niceRate(2 * tau)) : null;
+  return tau ? Math.min(1, niceRate(2 * tau)) : null;
 }
 
 /**

@@ -120,7 +120,7 @@ function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: (
   const liveParts = useMemo(() => hasLiveParts(project), [project]);
   const operable = useMemo(() => project.schematic.components.some((c) => getPart(c.type)?.interactive), [project]);
   const label = status === "running" ? `Simulating… ${((Date.now() - (startedAt ?? Date.now())) / 1000).toFixed(1)} s`
-    : status === "done" ? `Done in ${result?.elapsedMs} ms`
+    : status === "done" ? (useSim.getState().session?.live ? `Live: computing ahead of the playhead (last chunk ${result?.elapsedMs} ms)` : `Done in ${result?.elapsedMs} ms`)
     : status === "failed" ? "Failed: no results (see problems)"
     : status === "stopped" ? "Stopped: engine terminated, no results kept" : "Ready";
   return (
