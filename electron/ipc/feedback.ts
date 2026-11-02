@@ -1,11 +1,12 @@
 // Feedback delivery: POST to the relay (which files a labeled GitHub issue), with an offline queue on disk.
 // Without a relay the renderer opens a prefilled GitHub issue page instead (sb:feedback:openIssue).
-import { app, BrowserWindow, ipcMain, net, shell } from "electron";
+import { app, BrowserWindow, ipcMain, net } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { FEEDBACK_RELAY_URL, FEEDBACK_RETRY_INTERVAL_MS, NEW_ISSUE_URL } from "../../src/launcher/config";
 import type { FeedbackPayload } from "../../src/launcher/feedback";
 import { classifyRelayResponse, FeedbackQueue, type QueueItem, type SendResult } from "../../src/launcher/feedbackQueue";
+import { openHttps } from "./updates";
 
 const queueFile = () => path.join(app.getPath("userData"), "feedback-queue.json");
 
@@ -67,8 +68,7 @@ export function registerFeedbackIpc(): void {
   ipcMain.handle("sb:feedback:retry", async () => { await flush(true); return { queued: (await queue.pending()).length }; });
   ipcMain.handle("sb:feedback:openIssue", (_e, url: unknown) => {
     if (typeof url !== "string" || !url.startsWith(NEW_ISSUE_URL + "?")) return false;
-    void shell.openExternal(url);
-    return true;
+    return openHttps(url);
   });
   app.whenReady().then(() => {
     setTimeout(() => void flush(), 8000);

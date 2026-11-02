@@ -2,24 +2,22 @@
 // links, and auto-updates through electron-updater (GitHub provider). See docs/updates.md.
 import { app, BrowserWindow, ipcMain, net, shell } from "electron";
 import type { AppUpdater } from "electron-updater";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { RELEASES_API_URL, RELEASES_URL, REPO_NAME, REPO_OWNER, UPDATE_CHECK_INTERVAL_MS } from "../../src/launcher/config";
 import { fromGithubReleases, type NotesResult } from "../../src/launcher/notes";
-import { initialUpdateState, isPortable, updateReducer, type UpdateEvent, type UpdateState } from "../../src/launcher/updateState";
+import { decideUpdate, initialUpdateState, isPortable, updateReducer, type UpdateEvent, type UpdateState } from "../../src/launcher/updateState";
 
 export interface LauncherSettings {
   /** Offer pre-releases (all releases are pre-releases for now). */
   beta: boolean;
-  /** Go straight to the editor; the launcher stays reachable from the toolbar. */
-  skipOnStartup: boolean;
   /** Version the user last launched, for "what's new". */
   lastSeenVersion?: string;
   recent: { path: string; name: string; openedAt: string }[];
 }
 
-const DEFAULTS: LauncherSettings = { beta: true, skipOnStartup: false, recent: [] };
+const DEFAULTS: LauncherSettings = { beta: true, recent: [] };
 const RECENT_MAX = 8;
 const settingsFile = () => path.join(app.getPath("userData"), "launcher.json");
 const notesCache = () => path.join(app.getPath("userData"), "release-notes.json");
@@ -27,8 +25,10 @@ const notesCache = () => path.join(app.getPath("userData"), "release-notes.json"
 let settings: LauncherSettings | null = null;
 async function loadSettings(): Promise<LauncherSettings> {
   if (settings) return settings;
-  try { settings = { ...DEFAULTS, ...JSON.parse(await fs.readFile(settingsFile(), "utf8")) }; }
-  catch { settings = { ...DEFAULTS }; }
+  try {
+    const { beta, lastSeenVersion, recent } = JSON.parse(await fs.readFile(settingsFile(), "utf8"));
+    settings = { ...DEFAULTS, ...(typeof beta === "boolean" ? { beta } : {}), ...(typeof lastSeenVersion === "string" ? { lastSeenVersion } : {}), recent };
+  } catch { settings = { ...DEFAULTS }; }
   if (!Array.isArray(settings!.recent)) settings!.recent = [];
   return settings!;
 }
@@ -40,13 +40,17 @@ async function saveSettings(next: LauncherSettings) {
   await fs.rename(tmp, settingsFile());
 }
 
-/** Only https URLs leave the app (release pages, donate link, GitHub issues). */
+/**
+ * Only https URLs leave the app (release pages, donate link, GitHub issues).
+ * SPARKBENCH_TEST_OPEN_EXTERNAL=log prints them instead of opening the browser (automated tests).
+ */
 export function openHttps(url: unknown): boolean {
   if (typeof url !== "string") return false;
   let u: URL;
   try { u = new URL(url); } catch { return false; }
   if (u.protocol !== "https:") return false;
-  void shell.openExternal(u.toString());
+  if (process.env.SPARKBENCH_TEST_OPEN_EXTERNAL === "log") console.log(`[open-external] ${u.toString().length} ${u.toString()}`);
+  else void shell.openExternal(u.toString());
   return true;
 }
 
@@ -80,7 +84,8 @@ async function getUpdater(): Promise<AppUpdater> {
   autoUpdater.autoInstallOnAppQuit = true;   // a downloaded update installs when the app closes
   autoUpdater.allowDowngrade = false;
   autoUpdater.logger = { info: (m: unknown) => { if (testFeed) console.log("[updates]", m); }, warn: (m: unknown) => console.warn("[updates]", m), error: (m: unknown) => console.error("[updates]", m), debug: () => {} };
-  autoUpdater.on("checking-for-update", () => emit({ type: "checking" }));
+  // The GitHub pre-check already said "checking"/"available"; don't let this reset the offered version.
+  autoUpdater.on("checking-for-update", () => { if (state.phase !== "available") emit({ type: "checking" }); });
   autoUpdater.on("update-available", (i) => emit({ type: "available", version: i.version, files: i.files }));
   autoUpdater.on("update-not-available", (i) => emit({ type: "not-available", version: i?.version }));
   autoUpdater.on("download-progress", (p) => emit({ type: "progress", percent: p.percent, transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond }));
@@ -90,15 +95,57 @@ async function getUpdater(): Promise<AppUpdater> {
   return updater;
 }
 
-async function check(): Promise<UpdateState> {
-  if (state.phase === "disabled") return state;
+/**
+ * The installed build (setup exe) can update itself: it has electron-builder's app-update.yml and the NSIS
+ * uninstaller next to the exe. Unpacked/dir builds and the portable exe can't.
+ */
+function canSelfUpdate(): boolean {
+  if (testFeedUrl()) return true;
+  if (!app.isPackaged || isPortable(process.env)) return false;
+  return existsSync(path.join(process.resourcesPath, "app-update.yml"))
+    && existsSync(path.join(path.dirname(process.execPath), `Uninstall ${app.getName()}.exe`));
+}
+
+/** GitHub releases (fresh, else the cached copy). */
+async function fetchReleases(): Promise<NotesResult> {
   try {
+    const res = await net.fetch(RELEASES_API_URL, { headers: { Accept: "application/vnd.github+json", "User-Agent": `SparkBench/${app.getVersion()}` }, signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) throw new Error(res.status === 403 || res.status === 429 ? "GitHub is limiting requests right now (rate limit)." : `GitHub answered ${res.status}.`);
+    const releases = fromGithubReleases(await res.json());
+    const fetchedAt = new Date().toISOString();
+    await fs.writeFile(notesCache(), JSON.stringify({ fetchedAt, releases }), "utf8").catch(() => {});
+    return { source: "github", releases, fetchedAt };
+  } catch (e) {
+    const msg = (e as Error)?.message ?? String(e);
+    const error = /fetch failed|ERR_|ENOTFOUND|timed? ?out|abort/i.test(msg) ? "You're offline or GitHub can't be reached." : msg;
+    try {
+      const c = JSON.parse(await fs.readFile(notesCache(), "utf8"));
+      if (Array.isArray(c.releases)) return { source: "cache", releases: c.releases, fetchedAt: c.fetchedAt, error };
+    } catch { /* no cache yet */ }
+    return { source: "bundled", releases: [], error };
+  }
+}
+
+async function check(): Promise<UpdateState> {
+  if (state.phase === "disabled" || state.phase === "downloading" || state.phase === "ready") return state;
+  try {
+    // Compare versions first: electron-updater is only asked when GitHub has something newer that this copy
+    // can install. (A test feed skips this and goes straight to electron-updater.)
+    if (!testFeedUrl()) {
+      emit({ type: "checking" });
+      const notes = await fetchReleases();
+      if (notes.source !== "github") { emit({ type: "error", message: notes.error ?? "fetch failed" }); return state; }
+      const { newest, newer } = decideUpdate(state.currentVersion, notes.releases, state.beta);
+      if (!newer) { emit({ type: "latest", newest }); return state; }
+      if (!state.selfUpdate) { emit({ type: "manual", version: newer, reason: state.portable ? "portable" : "not-installed" }); return state; }
+      emit({ type: "available", version: newer }); // electron-updater fills in the size
+    }
     const u = await getUpdater();
     u.allowPrerelease = state.beta;
     await u.checkForUpdates();
   } catch (e) {
     // Errors are also emitted through the "error" event; make sure one lands even if they weren't.
-    if (state.phase === "checking" || state.phase === "idle") emit({ type: "error", message: (e as Error)?.message ?? String(e) });
+    if (state.phase === "checking" || state.phase === "idle" || (state.phase === "available" && !state.sizeBytes && !state.manual)) emit({ type: "error", message: (e as Error)?.message ?? String(e) });
   }
   return state;
 }
@@ -116,7 +163,6 @@ export function registerUpdatesIpc(): void {
   ipcMain.handle("sb:launcher:setSettings", async (_e, patch: Partial<LauncherSettings>) => {
     const cur = await loadSettings();
     const next: LauncherSettings = { ...cur };
-    if (typeof patch?.skipOnStartup === "boolean") next.skipOnStartup = patch.skipOnStartup;
     if (typeof patch?.lastSeenVersion === "string") next.lastSeenVersion = patch.lastSeenVersion.slice(0, 40);
     if (typeof patch?.beta === "boolean" && patch.beta !== cur.beta) {
       next.beta = patch.beta;
@@ -142,29 +188,12 @@ export function registerUpdatesIpc(): void {
   });
   ipcMain.handle("sb:launcher:openExternal", (_e, url: unknown) => openHttps(url));
 
-  ipcMain.handle("sb:updates:notes", async (): Promise<NotesResult> => {
-    try {
-      const res = await net.fetch(RELEASES_API_URL, { headers: { Accept: "application/vnd.github+json", "User-Agent": `SparkBench/${app.getVersion()}` }, signal: AbortSignal.timeout(10_000) });
-      if (!res.ok) throw new Error(res.status === 403 || res.status === 429 ? "GitHub is limiting requests right now." : `GitHub answered ${res.status}.`);
-      const releases = fromGithubReleases(await res.json());
-      const fetchedAt = new Date().toISOString();
-      await fs.writeFile(notesCache(), JSON.stringify({ fetchedAt, releases }), "utf8").catch(() => {});
-      return { source: "github", releases, fetchedAt };
-    } catch (e) {
-      const msg = (e as Error)?.message ?? String(e);
-      const error = /fetch failed|ERR_|ENOTFOUND|timed? ?out|abort/i.test(msg) ? "You're offline or GitHub can't be reached." : msg;
-      try {
-        const c = JSON.parse(await fs.readFile(notesCache(), "utf8"));
-        if (Array.isArray(c.releases)) return { source: "cache", releases: c.releases, fetchedAt: c.fetchedAt, error };
-      } catch { /* no cache yet */ }
-      return { source: "bundled", releases: [], error };
-    }
-  });
+  ipcMain.handle("sb:updates:notes", () => fetchReleases());
 
   ipcMain.handle("sb:updates:state", () => state);
   ipcMain.handle("sb:updates:check", () => check());
   ipcMain.handle("sb:updates:download", async () => {
-    if (state.portable) { openHttps(state.version ? `${RELEASES_URL}/tag/v${state.version}` : `${RELEASES_URL}/latest`); return state; }
+    if (state.manual || !state.selfUpdate) { openHttps(state.version ? `${RELEASES_URL}/tag/v${state.version}` : RELEASES_URL); return state; }
     if (state.phase !== "available" && !(state.phase === "error" && state.version)) return state;
     emit({ type: "download-started" });
     try { await (await getUpdater()).downloadUpdate(); }
@@ -181,7 +210,7 @@ export function registerUpdatesIpc(): void {
 
   app.whenReady().then(async () => {
     const s = await loadSettings();
-    state = initialUpdateState(app.getVersion(), { portable: isPortable(process.env), beta: s.beta });
+    state = initialUpdateState(app.getVersion(), { portable: isPortable(process.env), beta: s.beta, selfUpdate: canSelfUpdate() });
     if (!app.isPackaged) {
       emit({ type: "disabled", message: "Updates are off in development runs (npm run dev). Installed builds check GitHub releases." });
       return;
