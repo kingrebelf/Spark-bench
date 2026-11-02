@@ -28,13 +28,22 @@ function expandVars(uri: string, k: KicadInstall): string {
   });
 }
 
-function readTable(file: string, k: KicadInstall): LibEntry[] {
+/**
+ * Read a library table. KiCad 10 tables can nest: an entry of type "Table" points at another table
+ * (a fresh KiCad 10 user table is just `(lib (name "KiCad") (type "Table") (uri ".../template/sym-lib-table"))`),
+ * so those entries are expanded in place.
+ */
+export function readTable(file: string, k: KicadInstall, depth = 0): LibEntry[] {
+  if (depth > 4) return [];
   try {
     const t = parse(readFileSync(file, "utf8"));
-    return children(t, "lib").map((l) => ({
-      nickname: arg(children(l, "name")[0]) ?? "",
-      uri: expandVars(arg(children(l, "uri")[0]) ?? "", k),
-    })).filter((e) => e.nickname && e.uri);
+    return children(t, "lib").flatMap((l): LibEntry[] => {
+      const nickname = arg(children(l, "name")[0]) ?? "";
+      const uri = expandVars(arg(children(l, "uri")[0]) ?? "", k);
+      if (!nickname || !uri) return [];
+      if ((arg(children(l, "type")[0]) ?? "").toLowerCase() === "table") return readTable(uri, k, depth + 1);
+      return [{ nickname, uri }];
+    });
   } catch { return []; }
 }
 
