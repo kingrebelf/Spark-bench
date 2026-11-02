@@ -83,9 +83,15 @@ async function publish(version: string, notes: string) {
     log(`committing ${VERSION_FILES.join(", ")}`);
     git("commit", "-m", `release: ${tag}`, "--", ...VERSION_FILES);
   }
-  git("tag", "-a", tag, "-m", `SparkBench ${tag}`);
+  // A rerun after a failed push finds the tag already made on the release commit (an ancestor of HEAD).
+  const localTag = spawnSync("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}^{commit}`], { cwd: ROOT, encoding: "utf8" }).stdout.trim();
+  if (!localTag) git("tag", "-a", tag, "-m", `SparkBench ${tag}`);
+  else if (spawnSync("git", ["merge-base", "--is-ancestor", localTag, "HEAD"], { cwd: ROOT }).status !== 0) die(`a local tag ${tag} exists on a commit that isn't in main; delete it (git tag -d ${tag}) and rerun.`);
   log(`pushing main and ${tag}`);
-  run("git", ["push", "origin", "HEAD:main"]);
+  const pushed = spawnSync("git", ["push", "origin", "HEAD:main"], { cwd: ROOT, stdio: "inherit" });
+  if (pushed.status !== 0) die(`push was rejected (main moved on GitHub). Run:
+  git pull --no-rebase origin main
+  npm run release -- publish`);
   run("git", ["push", "origin", tag]);
 
   const sums = Object.fromEntries([assetNames(version).installer, assetNames(version).portable].map((n) => [n, sha256hex(path.join(OUT, n))]));

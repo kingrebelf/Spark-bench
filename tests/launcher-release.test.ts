@@ -43,8 +43,8 @@ describe("release helpers", () => {
     expect(prependRelease("# C\n\n## v0.1.0\nx\n", "0.2.0", "2026-12-01", "- y", false)).toBe("# C\n\n## v0.2.0 — 2026-12-01\n\n- y\n\n## v0.1.0\nx\n");
   });
 
-  it("the real CHANGELOG has an Unreleased section the script can use", () => {
-    expect(unreleasedNotes(readFileSync("CHANGELOG.md", "utf8")).length).toBeGreaterThan(0);
+  it("the real CHANGELOG keeps an Unreleased heading for the script (it may be empty right after a release)", () => {
+    expect(readFileSync("CHANGELOG.md", "utf8")).toMatch(/^## Unreleased\s*$/m);
   });
 
   it("parses credentials without echoing anything else", () => {

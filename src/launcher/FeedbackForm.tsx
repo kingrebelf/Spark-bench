@@ -32,7 +32,7 @@ function context(info: AppInfo | null): FeedbackContext {
   };
 }
 
-const EMPTY: Form = { kind: "bug", title: "", description: "", email: "", includeDiagnostics: true, attachProject: false, website: "" };
+const EMPTY: Form = { kind: "bug", title: "", description: "", email: "", includeDiagnostics: false, attachProject: false, website: "" };
 
 export function FeedbackForm({ info }: { info: AppInfo | null }) {
   const [f, setF] = useState<Form>(EMPTY);

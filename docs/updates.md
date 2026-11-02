@@ -109,7 +109,7 @@ release that isn't installed yet is marked "update available".
 
 ## Feedback and bug reports
 The form has: a kind (bug / idea / other), a title, a description, and an optional email (only shown when a relay is
-configured, with a note that issues are public). Two checkboxes are opt-in:
+configured, with a note that issues are public). Two checkboxes are opt-in (both start unticked):
 - **Include diagnostics**: app version, OS, Electron version, current problems, and the last 150 lines of the
   simulation log.
 - **Attach my current project**: the `.sbproj` text, up to 40 KB.
