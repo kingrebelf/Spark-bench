@@ -187,7 +187,7 @@ export function damageText(project: Project, tr: Pick<StressTrack, "componentId"
  * Netlist rewrite that opens failed parts: the part's first rated pin is moved to an internal node joined
  * to its net by a switch that opens at each failure time (and closes again at a repair).
  */
-export function applyFailures(netlist: string, nl: NetlistResult, project: Project, damage: Record<string, Damage[]>, edge = 1e-6): string {
+export function applyFailures(netlist: string, nl: NetlistResult, project: Project, damage: Record<string, Damage[]>, edge = 1e-6, staticOpen = false): string {
   const ids = Object.keys(damage).filter((id) => damage[id]?.length);
   if (!ids.length) return netlist;
   const els = elementsByComponent(nl);
@@ -211,6 +211,7 @@ export function applyFailures(netlist: string, nl: NetlistResult, project: Proje
       lines[i] = tok.join(" ");
     }
     if (!touched) continue;
+    if (staticOpen) { extra.push(`Rsbf_${u} ${net} ${inner} 1e9`); continue; }
     const pts: [number, number][] = [[0, 1]];
     let last = 0;
     for (const d of [...damage[id]].sort((a, b) => a.t - b.t)) {

@@ -10,6 +10,10 @@ import { applyFailures, needsCurrent, type Damage } from "./stress";
 export interface RunOptions extends NetlistOptions {
   /** Failed parts (live damage): each is opened from its failure time (and closed again at a repair). */
   damage?: Record<string, Damage[]>;
+  /** Failed parts are open for the whole run (a plain 1 GΩ in place of the timed switch): chunked live mode. */
+  staticOpen?: boolean;
+  /** Last rewrite of the netlist text before it is sent (chunked live mode: initial state). */
+  transform?: (netlist: string) => string;
 }
 
 /**
@@ -29,7 +33,10 @@ export async function runSimulation(project: Project, engine: SpiceEngine, analy
     }
   }
   const damage = analysis === "tran" ? opts.damage : undefined;
-  const saving = new SavingEngine(engine, plan.saves, damage ? (t) => applyFailures(t, nl, project, damage) : undefined);
+  const saving = new SavingEngine(engine, plan.saves, (t) => {
+    const failed = damage ? applyFailures(t, nl, project, damage, 1e-6, opts.staticOpen) : t;
+    return opts.transform ? opts.transform(failed) : failed;
+  });
   const result = await simulate(project, saving, analysis, getPart, opts);
   // When the engine ran, show the text it really received (with our .save line).
   if (saving.lastNetlist) result.netlist = saving.lastNetlist;
