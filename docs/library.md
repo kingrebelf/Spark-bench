@@ -144,15 +144,18 @@ per netlist; per-instance values passed as subcircuit parameters).
   circuit only decouples it. The KiCad export leaves pin 5 unconnected.
 - **Switches, buttons and pots** use their property value (Closed / Pressed / Position) for op, ac and a plain
   transient run: a fixed resistor. In a live transient run you click the switch, hold the button or drag the pot on the
-  schematic; each part then gets a PWL control node that follows the recorded changes (1 µs edges), driving a
-  voltage-controlled switch (Ron/Roff) or the pot's two halves, and the run is re-simulated from 0 s (live mode lives in
-  `src/sim/**`). Contact bounce is not modeled.
+  schematic. Live mode computes the run in short chunks, each a real ngspice run that continues from the circuit's
+  saved state (every node voltage and inductor current); a change continues from the state at that moment, and the
+  part's new value is applied over a 1 µs edge through its schedule hook (a PWL control node driving a
+  voltage-controlled switch, or the pot's two halves). Time-dependent parts honor `ctx.timeOffset` so a chunk continues
+  the same waveform: sine phase, pulse delay, and the 555/digital power-up gate (`time+{t0} > 0`). Live mode lives in
+  `src/sim/**`. Contact bounce is not modeled.
 - **Ratings and damage (live simulation only).** Parts with ratings carry them as editable props that never change
   the netlist: resistor power (default 0.25 W), capacitor voltage (50 V), electrolytic voltage (25 V) and reverse
   voltage (1 V), LED max current (30 mA), diode max current (small-signal 300 mA, rectifier and Schottky 1 A) and
   zener power (0.5 W). The simulation layer compares a moving average of each stress with its rating (the averaging
   times are set in `src/sim/**`, e.g. power over 0.5 s, so brief surges are tolerated): amber glow from 70 %, red at
-  100 %, and when the average passes the limit the part fails and is re-simulated as an open circuit from that time,
+  100 %, and when the average passes the limit the part fails and the run continues with it open from that time,
   with a Diagnostic naming the stress and a sized replacement. It is a teaching approximation; real failures depend
   on heat sinking, pulse shape and the individual part. Transistors, op-amps and ICs have no ratings yet.
 - **Digital outputs draw their current from GND, not VCC**, so supply-current readings of logic circuits are not

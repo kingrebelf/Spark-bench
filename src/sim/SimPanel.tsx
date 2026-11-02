@@ -138,7 +138,7 @@ function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: (
         : <button className="btn primary" onClick={() => run()} title="Simulate the circuit">▶ Run</button>}
       {status !== "running" && (
         <button className="btn live" onClick={() => void startLive()}
-          title="Transient run played back in real time (slowed for fast circuits). Click switches and buttons, drag potentiometers while it plays; every change re-simulates the whole run from 0 s with your change at the time you made it.">
+          title="Transient run played back in real time (slowed for fast circuits). Click switches and buttons, drag potentiometers while it plays; each change continues the run from the circuit's state at that moment.">
           ⚡ Live
         </button>
       )}

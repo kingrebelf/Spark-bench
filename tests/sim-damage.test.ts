@@ -39,7 +39,7 @@ describe("damage averaging rule", () => {
 });
 
 describe("burnout in a transient run", () => {
-  it("an LED straight on 9 V fails within milliseconds; re-simulated as an open circuit after that", async () => {
+  it("an LED straight on 9 V fails within milliseconds; simulated as an open circuit after that", async () => {
     const { b, P } = across("led", { color: "red" }, "9", ["A", "K"]);
     b.project.simulation.tran = { stop: "100m", step: "100u" };
     const r = await runSimulation(b.project, engine(), "tran");

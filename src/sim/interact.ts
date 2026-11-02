@@ -1,7 +1,7 @@
 // Operating interactive parts on the schematic while a transient result plays (live mode).
 // The canvas routes select-tool pointer events here first (`liveInput.down/move/up`); when a press lands on
 // a switch, push button or potentiometer and a current transient result is shown, the press operates the
-// part instead of selecting or moving it. Changes are recorded at the playback time and re-simulated.
+// part instead of selecting or moving it. The run continues from the circuit's state at the playback time.
 import { getPart } from "../core/library";
 import { useProject } from "../core/store";
 import type { ComponentDef, ComponentInstance, Point } from "../core/types";

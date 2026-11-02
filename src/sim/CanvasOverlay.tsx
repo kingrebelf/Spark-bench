@@ -24,7 +24,6 @@ export function SimCanvasOverlay() {
   const runProject = useRunProject();
   const atRun = useMemo(() => new Map(resolveProbes(runProject).map((r) => [r.probe.id, r])), [runProject]);
   if (!probes.length) return <LiveParts />;
-  // Never show values past the earliest change that is still being re-simulated.
   // The playhead never passes the computed end (live sessions wait there for the next chunk).
   const tShow = displayLimit(t, null);
 

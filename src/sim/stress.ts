@@ -3,7 +3,7 @@
 // Rule: every rated quantity (ComponentDef.ratings) is passed through an exponential moving average with a
 // time constant per kind (a crude thermal / dielectric memory), so a brief spike survives and a sustained
 // overload fails. A part fails at the first time its average exceeds the limit; from then on it is
-// modeled as an OPEN CIRCUIT (its first rated pin is disconnected through a switch), by re-simulating from 0 s.
+// modeled as an OPEN CIRCUIT (its first rated pin is disconnected), and the run continues from there.
 // Real failures vary (parts can also short, degrade or survive); this is a teaching approximation.
 import { computeConnectivity, type Connectivity } from "../core/connectivity";
 import { getPart } from "../core/library";

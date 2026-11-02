@@ -200,7 +200,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
       ctx.save(); ctx.beginPath(); ctx.rect(M.left, top, plotW, paneH); ctx.clip();
       ctx.strokeStyle = s.color; ctx.lineWidth = 1.5; ctx.lineJoin = "round";
       if (cut != null) {
-        // Nothing past the limit: not yet played, or waiting for the re-simulation.
+        // Nothing past the limit: not yet played.
         ctx.beginPath(); ctx.rect(M.left, top, cut - M.left, paneH); ctx.clip(); path(); ctx.stroke();
       } else if (ph != null) {
         // Played part bright, the rest faint: the waveform "draws" as playback advances.

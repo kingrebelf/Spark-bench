@@ -79,7 +79,7 @@ describe("live schedules", () => {
     expect(live).toMatch(/\.model SBL_SW_SW1 SW\(Ron=1e-2 Roff=1e\+9 Vt=0\.5 Vh=0\)/);
   });
 
-  it("re-simulation honors a switch toggle at t: LED current ~0 before, lit after", async () => {
+  it("a switch schedule toggles at t: LED current ~0 before, lit after", async () => {
     const { b, S } = ledSwitch();
     const r = await runSimulation(b.project, engine(), "tran", { schedules: new Map([[S.id, toPwl(0, [[5e-3, 1]], 1e-6)]]) });
     expect(r.ok, JSON.stringify(r.diagnostics)).toBe(true);

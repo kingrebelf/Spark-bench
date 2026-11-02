@@ -24,7 +24,7 @@
 
 <p align="center">
   <img src="docs/images/demo.gif" alt="SparkBench live mode: a 555 timer blinks an LED in real time while the scope scrolls; clicking the switch turns the LED off and on again" width="900">
-  <br><sub>Live mode in real time: the 555 blinker example with an on/off switch added in front of the LED. The scope scrolls, and clicking SW1 re-simulates the circuit with the switch open, then closed.</sub>
+  <br><sub>Live mode in real time: the 555 blinker example with an on/off switch added in front of the LED. The scope scrolls, and clicking SW1 continues the circuit with the switch open, then closed.</sub>
 </p>
 
 The app is a schematic editor and circuit simulator for people who want to *see* a circuit work and
@@ -84,7 +84,7 @@ and an optional **AI assistant** proposes changes. ngspice verifies each proposa
 | ![555 blinker running live: the LED glows and the scope scrolls](docs/images/live.png) | ![Close-up of playback, the time-scale dial and the scrolling scope](docs/images/scope.png) |
 | **Live mode**: the 555 blinker in real time. The LED glows with its simulated current, and probe values update on the schematic. | **Time scale and scope**: 1 s of circuit time per second, a 10-division scrolling window, and per-trace measurements. |
 | ![An LED burnt out by too much current, with the damage message and fix](docs/images/burnout.png) | ![Op-amp inverting amplifier with a transient result and two cursors](docs/images/editor.png) |
-| **Component damage**: with 100 Ω on 9 V the LED carries 67 mA (rated 30 mA). It fails, is re-simulated as an open circuit, and the fix is sized for you. | **Transient analysis with cursors**: an inverting amplifier with gain −10, with A/B cursors and Δ readouts. |
+| **Component damage**: with 100 Ω on 9 V the LED carries 67 mA (rated 30 mA). It fails, the run continues with it open, and the fix is sized for you. | **Transient analysis with cursors**: an inverting amplifier with gain −10, with A/B cursors and Δ readouts. |
 | ![RC low-pass filter with Bode magnitude and phase](docs/images/bode.png) | ![Diagnostics explaining that the circuit has no ground](docs/images/diagnostics.png) |
 | **AC sweep**: Bode magnitude and phase of an RC low-pass, 10 Hz to 1 MHz. | **Diagnostics**: a forgotten ground is caught before simulation, and each problem names the part and the fix. |
 | ![Properties of the 555 timer showing its behavioral model notes](docs/images/properties.png) | ![Library search for transistors next to a BJT amplifier](docs/images/library.png) |
@@ -184,15 +184,17 @@ and supply current aren't modeled. Use a manufacturer's model before trusting ma
 - **Real-time playback** with a time-scale dial in 1-2-5 steps from 100 ns/s to 10 s/s and a *Real time*
   detent. *Auto* picks a rate from the circuit, e.g. about two periods of the slowest source per second.
   Changing the rate never changes the simulation, only how fast you watch it.
-- **Continuous runs:** ngspice computes ahead of the playhead in the background, and the scope keeps the last
-  30 s of playback. If the engine falls behind, playback waits ("Computing…") instead of looping or skipping.
+- **Continuous runs:** ngspice computes short chunks ahead of the playhead. Each chunk is a real ngspice run that
+  continues from the circuit's exact state at the end of the previous one (every node voltage and inductor
+  current), so the waveforms match one long run. The scope keeps the last 30 s of playback. If the engine falls
+  behind, playback waits ("Computing…") instead of looping or skipping.
 - **Operate the circuit:** click switches, hold push buttons and drag potentiometers on the schematic while it
-  plays. Each change is recorded at its playback time and the circuit is re-simulated from 0 s with all your
-  changes, so what you see is always a complete ngspice solution.
+  plays. A change continues the run from the circuit's state at that moment with the new value, so it shows up
+  on the scope and the canvas almost at once.
 - **Glow and damage:** LEDs light with their simulated current. Resistors (power), capacitors (voltage,
   reverse voltage for electrolytics), LEDs and diodes (current) and Zeners (power) have ratings. Above 70 %
   of a rating a part glows amber. When its averaged stress passes the limit, it fails: you see a flash, smoke
-  and a char mark, the circuit is re-simulated with the part open from that moment, and the message sizes
+  and a char mark, the run continues with the part open from that moment, and the message sizes
   the fix (e.g. "use a ≥ 3 W resistor, or at least 860 Ω"). **Repair all parts** puts them back.
 
 The engine can't pause mid-run. Pause applies to playback of computed results, and *Stop* ends the worker.
@@ -287,8 +289,9 @@ More: [docs/architecture.md](docs/architecture.md).
 - Digital parts, the 555 and op-amps are behavioral analog models, not XSPICE digital models or vendor models.
 - No built-in manufacturer models. Projects can store `.model`/`.subckt` text, but there is no import button
   in the UI yet.
-- Live re-simulation starts from 0 s on every change, so compute time grows with run length. At real time a
-  555 circuit stays ahead for roughly 20 minutes, then playback waits for the engine.
+- Live mode continues from the saved node voltages and inductor currents. Internal state that SPICE doesn't
+  report as a node (e.g. a switch model's hysteresis memory) starts fresh at each chunk; the shipped parts keep
+  their state in node voltages, and a test checks every example against one continuous run.
 - Live switch and pot changes and burnouts aren't saved in the project file or the undo history.
 - KiCad: single-sheet schematics only; exported files need KiCad 10; the PCB is placed, not routed.
 - Windows is the only tested and packaged platform, and the builds are unsigned.
@@ -297,7 +300,6 @@ More: [docs/architecture.md](docs/architecture.md).
 ## Roadmap
 
 - Import SPICE models from the UI, and more parts
-- Faster long live runs (continue from saved state instead of re-simulating from 0 s)
 - DC sweep, parameter sweep and Monte Carlo analyses
 - Signed builds, plus tested macOS and Linux packages
 - Hierarchical sheets and buses (editor and KiCad)

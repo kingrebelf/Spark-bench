@@ -37,7 +37,6 @@ export function LiveParts() {
   const t = usePlayback((s) => s.t);
   const stale = useStaleness();
   const enabled = liveEnabled();
-  // Results are only shown up to the earliest change not yet re-simulated.
   const tShow = result?.analysis === "tran" ? displayLimit(t, null) : null;
 
   const parts: { c: ComponentInstance; def: ComponentDef }[] = [];
@@ -103,7 +102,7 @@ export function LiveParts() {
               <rect x={box.x0} y={box.y0} width={box.x1 - box.x0} height={box.y1 - box.y0} rx={0.4} className="live-grab"
                 fill="transparent" stroke="var(--accent)" strokeWidth={0.08} strokeDasharray="0.4 0.3" pointerEvents="all"
                 style={{ cursor: it.kind === "slider" ? "ns-resize" : "pointer" }}>
-                <title>{`${c.ref}: ${hint}. The whole run is re-simulated from 0 s with your change at that time.`}</title>
+                <title>{`${c.ref}: ${hint}. The run continues from the circuit's state at that moment with your change.`}</title>
               </rect>
             )}
           </g>
