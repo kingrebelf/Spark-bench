@@ -18,13 +18,13 @@ const THR = s(`V(thres,gnd)-2*${VCC}/3`);
 // time step at a sharp edge. At the DC operating point (time = 0) the latch is held reset, like a 555
 // powering up: discharge on, timing capacitor empty.
 const SUBCKT = [
-  ".subckt SB_555 gnd trig out rst thres disch vcc params: vdrop=1.7 ron=10 rdis=10 iq=3m",
+  ".subckt SB_555 gnd trig out rst thres disch vcc params: vdrop=1.7 ron=10 rdis=10 iq=3m t0=0",
   "* SparkBench behavioral 555: comparators at VCC/3 and 2VCC/3, SR latch, discharge switch, output stage.",
   "Rq vcc gnd {5/iq}",
   "Rt trig gnd 100meg",
   "Rh thres gnd 100meg",
   "Rr rst gnd 100meg",
-  `Bc cmd gnd V = time > 0 ? (1-${RST})*(${TRG}+(1-${TRG})*((1-${THR})*(2*${Q}-1)-${THR}))-${RST} : -1`,
+  `Bc cmd gnd V = time+{t0} > 0 ? (1-${RST})*(${TRG}+(1-${TRG})*((1-${THR})*(2*${Q}-1)-${THR}))-${RST} : -1`,
   "Sl vcc q cmd gnd SB555L OFF",
   ".model SB555L SW(Vt=0 Vh=0.5 Ron=1 Roff=1g)",
   "Rl q gnd 1meg",
@@ -64,7 +64,8 @@ export const timer555: ComponentDef = {
   spice: (c) => {
     c.define("subckt:SB_555", SUBCKT);
     const nodes = ["GND", "TRIG", "OUT", "RST", "THR", "DIS", "VCC"].map((p) => c.node(p)).join(" ");
-    return [`${el("X", c)} ${nodes} SB_555 vdrop=${sn(c.num("vdrop"))} ron=${sn(c.num("ron"))} iq=${sn(c.num("iq"))}`];
+    // t0: circuit time at the start of a live-mode chunk, so the power-up reset only happens at circuit time 0.
+    return [`${el("X", c)} ${nodes} SB_555 vdrop=${sn(c.num("vdrop"))} ron=${sn(c.num("ron"))} iq=${sn(c.num("iq"))}${c.timeOffset ? ` t0=${sn(c.timeOffset)}` : ""}`];
   },
   kicad: { symbol: "Timer:NE555P", footprint: "Package_DIP:DIP-8_W7.62mm", pinMap: { GND: "1", TRIG: "2", OUT: "3", RST: "4", THR: "6", DIS: "7", VCC: "8" } },
 };

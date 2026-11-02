@@ -33,7 +33,18 @@ export const resistor: ComponentDef = {
 function liveControl(c: SpiceEmitContext, schedule: [number, number][]): string {
   const u = uid(c);
   const node = `sbl_${u}`;
-  const pts = schedule.length ? schedule : [[0, 0] as [number, number]];
+  // Schedule times are absolute circuit time; a chunk starting at t0 keeps the value at t0 and the later points.
+  const t0 = c.timeOffset ?? 0;
+  let pts: [number, number][] = schedule.length ? schedule : [[0, 0]];
+  if (t0 > 0) {
+    let v0 = pts[0][1];
+    for (let i = 0; i < pts.length; i++) {
+      const [t, v] = pts[i];
+      if (t <= t0) v0 = v;
+      else { const [tp, vp] = pts[i - 1] ?? [t, v]; v0 = vp + (v - vp) * (t0 - tp) / (t - tp || 1); break; }
+    }
+    pts = [[0, v0], ...pts.filter(([t]) => t > t0).map(([t, v]): [number, number] => [t - t0, v])];
+  }
   const pairs = pts.map(([t, v]) => `${sn(t)} ${sn(v)}`);
   const rows: string[] = [];
   for (let i = 0; i < pairs.length; i += 6) rows.push((i ? "+ " : "") + pairs.slice(i, i + 6).join(" "));

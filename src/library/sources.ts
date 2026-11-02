@@ -42,6 +42,12 @@ export const idc: ComponentDef = {
   displayProps: ["value"],
 };
 
+// Chunked live simulation (ctx.timeOffset = t0): SPICE time restarts at 0 for each chunk, so periodic sources
+// are shifted to continue the same waveform. PULSE takes a delay within (-period, 0] once t0 is past the first
+// edge (ngspice folds a negative delay into the period, verified against a single run).
+const pulseDelay = (td: number, per: number, t0: number) => (t0 <= td ? td - t0 : td - t0 + per * Math.floor((t0 - td) / per));
+const sinePhase = (phase: number, f: number, t0: number) => (phase + ((360 * f * t0) % 360)) % 360;
+
 export const vsine: ComponentDef = {
   id: "vsine", name: "Sine Voltage Source", category: "Sources", refPrefix: "V",
   description: "Ideal sine source: offset + amplitude·sin(2π·f·t + phase). Also drives AC analysis with its AC magnitude.",
@@ -56,7 +62,11 @@ export const vsine: ComponentDef = {
     modelProp("acmag", "AC magnitude", "1", "V", "Small-signal amplitude used by AC analysis."),
   ],
   provenance: "ideal",
-  spice: (c) => [`${el("V", c)} ${c.node("1")} ${c.node("2")} DC ${n(c, "offset")} AC ${n(c, "acmag")} SIN(${n(c, "offset")} ${n(c, "amplitude")} ${n(c, "frequency")} 0 0 ${n(c, "phase")})`],
+  spice: (c) => {
+    const t0 = c.timeOffset ?? 0;
+    const ph = t0 ? sn(sinePhase(c.num("phase"), c.num("frequency"), t0)) : n(c, "phase");
+    return [`${el("V", c)} ${c.node("1")} ${c.node("2")} DC ${n(c, "offset")} AC ${n(c, "acmag")} SIN(${n(c, "offset")} ${n(c, "amplitude")} ${n(c, "frequency")} 0 0 ${ph})`];
+  },
   kicad: { symbol: "Simulation_SPICE:VSIN", footprint: "", pinMap: { 1: "1", 2: "2" } },
   displayProps: ["amplitude", "frequency"],
 };
@@ -82,7 +92,8 @@ export const vpulse: ComponentDef = {
     const per = 1 / f;
     const width = Math.max(per * duty - tr, tr);
     const ac = c.num("acmag");
-    return [`${el("V", c)} ${c.node("1")} ${c.node("2")}${ac ? ` AC ${sn(ac)}` : ""} PULSE(${n(c, "low")} ${n(c, "high")} ${n(c, "delay")} ${sn(tr)} ${sn(tr)} ${sn(width)} ${sn(per)})`];
+    const td = c.timeOffset ? sn(pulseDelay(c.num("delay"), per, c.timeOffset)) : n(c, "delay");
+    return [`${el("V", c)} ${c.node("1")} ${c.node("2")}${ac ? ` AC ${sn(ac)}` : ""} PULSE(${n(c, "low")} ${n(c, "high")} ${td} ${sn(tr)} ${sn(tr)} ${sn(width)} ${sn(per)})`];
   },
   kicad: { symbol: "Simulation_SPICE:VPULSE", footprint: "", pinMap: { 1: "1", 2: "2" } },
   displayProps: ["high", "frequency"],
@@ -107,7 +118,8 @@ export const vtriangle: ComponentDef = {
     const per = 1 / c.num("frequency");
     const sym = Math.min(0.999, Math.max(0.001, c.num("symmetry") / 100));
     const tr = per * sym, tf = per - tr;
-    return [`${el("V", c)} ${c.node("1")} ${c.node("2")} PULSE(${n(c, "low")} ${n(c, "high")} ${n(c, "delay")} ${sn(tr)} ${sn(tf)} ${sn(per * 1e-9)} ${sn(per)})`];
+    const td = c.timeOffset ? sn(pulseDelay(c.num("delay"), per, c.timeOffset)) : n(c, "delay");
+    return [`${el("V", c)} ${c.node("1")} ${c.node("2")} PULSE(${n(c, "low")} ${n(c, "high")} ${td} ${sn(tr)} ${sn(tf)} ${sn(per * 1e-9)} ${sn(per)})`];
   },
   kicad: { symbol: "Simulation_SPICE:VPULSE", footprint: "", pinMap: { 1: "1", 2: "2" } },
   displayProps: ["high", "frequency"],

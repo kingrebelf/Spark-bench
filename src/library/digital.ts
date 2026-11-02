@@ -26,7 +26,7 @@ const clkLo = (node: string) => step(`0.4*${VCC}-V(${node},gnd)`);
 
 function header(name: string, pins: string[], inputs: string[]): string[] {
   return [
-    `.subckt ${name} ${pins.join(" ")} params: td=10n rout=50`,
+    `.subckt ${name} ${pins.join(" ")} params: td=10n rout=50 t0=0`,
     `* SparkBench behavioral logic (see src/library/digital.ts)`,
     `Rq vcc gnd 1meg`,
     ...inputs.map((i) => `Rin_${i} ${i} gnd 100meg`),
@@ -67,7 +67,7 @@ function store(node: string, d: StoreDrive): string[] {
   const set = d.set ?? "0", clr = d.clr ?? "0";
   const drive = `${set}*(${VCC}-${v})+(1-${set})*(${clr}*(0-${v})+(1-${clr})*${d.sel}*((${d.data})-${v}))`;
   return [
-    `Bs_${node} gnd ${node} I = time > 0 ? 1m*(${drive})+1n*(${VCC}*${lvl(node)}-${v}) : 1m*((${d.init ?? "0"})-${v})`,
+    `Bs_${node} gnd ${node} I = time+{t0} > 0 ? 1m*(${drive})+1n*(${VCC}*${lvl(node)}-${v}) : 1m*((${d.init ?? "0"})-${v})`,
     `Cs_${node} ${node} gnd 1p`,
   ];
 }
@@ -75,7 +75,8 @@ function store(node: string, d: StoreDrive): string[] {
 function instance(ctx: SpiceEmitContext, subckt: string, text: string, pinOrder: string[]): string[] {
   ctx.define(`subckt:${subckt}`, text);
   const td = Math.max(1e-12, ctx.num("td"));
-  return [`${el("X", ctx)} ${pinOrder.map((p) => ctx.node(p)).join(" ")} ${subckt} td=${sn(td)} rout=${sn(ctx.num("rout"))}`];
+  // t0: circuit time at the start of a live-mode chunk, so storage nodes only take their power-up value at circuit time 0.
+  return [`${el("X", ctx)} ${pinOrder.map((p) => ctx.node(p)).join(" ")} ${subckt} td=${sn(td)} rout=${sn(ctx.num("rout"))}${ctx.timeOffset ? ` t0=${sn(ctx.timeOffset)}` : ""}`];
 }
 
 const dc = (inputs: string[], outputs: string[]): [string, string][] =>
