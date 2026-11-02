@@ -5,7 +5,7 @@ import { getPart } from "../core/library";
 import type { SpiceEngine } from "../core/simulate";
 import { useProject } from "../core/store";
 import type { AnalysisKind, Diagnostic, Project, SimResult } from "../core/types";
-import { dropBefore, lastIndexAtOrBefore, runChunk, splice, stateAt, truncate } from "./chunk";
+import { dropBefore, lastIndexAtOrBefore, runChunk, safeIndex, splice, stateAt, truncate } from "./chunk";
 import { autoRate, defaultRate, livePlan, recordChange, staticValue, tranPlan, valueAt, type Change, type LivePlan } from "./live";
 import { runSimulation } from "./run";
 import { validateSetup } from "./setup";
@@ -43,6 +43,8 @@ export interface Session {
   damage: Record<string, Damage[]>;
   /** The last change: the circuit time it applies from, and how long until its first chunk was shown. */
   lastChange?: { t: number; latencyMs?: number };
+  /** Values operated while the previous change was still computing; applied as soon as it lands. */
+  pending?: Record<string, number>;
 }
 
 /** Averaged stress of one rating over the shown timeline (aligned with result.x). */
@@ -110,6 +112,14 @@ export const useSim = create<SimState>((set, get) => {
   let pumping = false;
   let changeWall: number | null = null;
   let firstAfterChange = false;
+  /**
+   * Changes made while the previous change's first chunk is still computing. Cutting the timeline again would
+   * discard that chunk, so a drag at mouse speed would never show anything; instead they are applied in order at
+   * the end of the chunk that lands (a slider keeps only its latest value), and every step of a drag shows data.
+   */
+  let queue: { id: string; value: number }[] = [];
+  /** A timeline end already chosen as a quiet restart point (cutting there must not trigger another step back). */
+  let trustedEnd = NaN;
   /** For the first chunk after a change or repair: values just before it, and parts to reconnect. */
   let transitionFrom: Record<string, number> | null = null;
   let reconnect: string[] = [];
@@ -181,6 +191,12 @@ export const useSim = create<SimState>((set, get) => {
         const pb = usePlayback.getState();
         const target = s.live ? Math.max(pb.t ?? end, x[0]) + LEAD_SECONDS * pb.rate : s.stop;
         if (end >= target - 1e-12) break;
+        // Continue from a quiet sample (never from inside a fast edge): cut back to it first if needed.
+        if (end !== trustedEnd) {
+          const safe = safeIndex(r, x.length - 1, 50);
+          trustedEnd = x[safe];
+          if (safe < x.length - 1) { cutAt(safe); continue; }
+        }
         const want = (firstAfterChange ? FIRST_CHUNK_SECONDS : CHUNK_SECONDS) * pb.rate;
         const length = Math.min(Math.max(want, 20 * s.plan.step), target - end, s.plan.step * 50_000);
         const myGen = gen, myToken = token;
@@ -222,6 +238,8 @@ export const useSim = create<SimState>((set, get) => {
           changeWall = null;
         }
         firstAfterChange = false;
+        const next = queue.shift();
+        if (next) { const nx = get().result!.x!.real; applyChange(next.id, next.value, nx[nx.length - 1]); }
       }
     } finally {
       pumping = false;
@@ -229,11 +247,33 @@ export const useSim = create<SimState>((set, get) => {
     }
   }
 
+  /** Operate a part at circuit time `at`: cut there and continue from the circuit's state with the new value. */
+  function applyChange(componentId: string, value: number, at: number) {
+    const s = get().session;
+    if (!s) return;
+    const tk = restartAt(Math.max(0, at));
+    if (tk == null) return;
+    // Everything recorded after the restart point belonged to a future that is now recomputed.
+    const changes: Record<string, Change[]> = {};
+    for (const [id, list] of Object.entries(s.changes)) { const kept = list.filter(([t]) => t <= tk); if (kept.length) changes[id] = kept; }
+    // Values in effect just before the change, at the restart point.
+    transitionFrom = transitionFrom ?? paramsAt(projectOf(), changes, tk - 1e-15);
+    changes[componentId] = recordChange(changes[componentId], tk, value);
+    params = paramsAt(projectOf(), changes, tk);
+    changeWall = performance.now();
+    firstAfterChange = true;
+    const pending = { ...s.pending };
+    if (!queue.some((q) => q.id === componentId)) delete pending[componentId];
+    set({ session: { ...s, changes, damage: pruneDamage(s.damage, tk), lastChange: { t: tk }, pending } });
+    void pump();
+  }
+
   /** Cut the timeline at the last real timepoint at or before t; returns that time (null when there is no timeline). */
   function restartAt(t: number): number | null {
     const r = get().result;
     if (!r?.ok || r.analysis !== "tran" || !r.x?.real.length) return null;
-    const k = lastIndexAtOrBefore(r.x.real, t);
+    const k = safeIndex(r, lastIndexAtOrBefore(r.x.real, t));
+    trustedEnd = r.x.real[k];
     gen++;
     if (k < r.x.real.length - 1) cutAt(k);
     return r.x.real[k];
@@ -250,6 +290,8 @@ export const useSim = create<SimState>((set, get) => {
     }
     const my = ++token;
     gen++;
+    queue = [];
+    changeWall = null;
     if (get().status === "running") engine.stop?.(); // a newer run replaces the old one
     set({ status: "running", blocked: [], startedAt: Date.now(), session, stress: [] });
     let result: SimResult;
@@ -323,21 +365,15 @@ export const useSim = create<SimState>((set, get) => {
     change: (componentId, value, at) => {
       const s = get().session, r = get().result;
       if (!s || !r?.ok || r.analysis !== "tran") return;
+      if (changeWall != null && pumping) {
+        const slider = getPart(projectOf().schematic.components.find((c) => c.id === componentId)?.type ?? "")?.interactive?.kind === "slider";
+        const last = queue[queue.length - 1];
+        if (slider && last?.id === componentId) last.value = value; else queue.push({ id: componentId, value });
+        set({ session: { ...s, pending: { ...s.pending, [componentId]: value } } });
+        return;
+      }
       const pb = usePlayback.getState();
-      const tk = restartAt(Math.max(0, at ?? pb.t ?? pb.t1));
-      if (tk == null) return;
-      // Everything recorded after the restart point belonged to a future that is now recomputed.
-      const changes: Record<string, Change[]> = {};
-      for (const [id, list] of Object.entries(s.changes)) { const kept = list.filter(([t]) => t <= tk); if (kept.length) changes[id] = kept; }
-      // Values in effect just before the change, at the restart point (a change made while the previous one is
-      // still computing keeps that one's origin: nothing has been computed since).
-      transitionFrom = transitionFrom ?? paramsAt(projectOf(), changes, tk - 1e-15);
-      changes[componentId] = recordChange(changes[componentId], tk, value);
-      params = paramsAt(projectOf(), changes, tk);
-      changeWall = performance.now();
-      firstAfterChange = true;
-      set({ session: { ...s, changes, damage: pruneDamage(s.damage, tk), lastChange: { t: tk } } });
-      void pump();
+      applyChange(componentId, value, at ?? pb.t ?? pb.t1);
     },
     repairAll: () => {
       const s = get().session;

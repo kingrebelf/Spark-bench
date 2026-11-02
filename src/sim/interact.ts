@@ -48,6 +48,8 @@ export function liveHit(p: Point): { inst: ComponentInstance; def: ComponentDef;
 export function liveValue(c: ComponentInstance, def: ComponentDef, t: number | null): number {
   const s = useSim.getState().session;
   const init = staticValue(c, def);
+  // A value operated while the previous change is still computing shows at once.
+  if (s?.pending?.[c.id] != null) return s.pending[c.id];
   if (!s || t == null) return t == null && s ? valueAt(init, s.changes[c.id], usePlayback.getState().t1) : init;
   return valueAt(init, s.changes[c.id], t);
 }

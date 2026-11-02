@@ -1,7 +1,7 @@
 // Chunked continuation from saved state must reproduce one continuous ngspice run.
 import { describe, expect, it } from "vitest";
 import { Builder, engine } from "./helpers";
-import { applyInitialState, lastIndexAtOrBefore, simulateChunked, stateAt } from "../src/sim/chunk";
+import { applyInitialState, lastIndexAtOrBefore, runChunk, safeIndex, simulateChunked, stateAt } from "../src/sim/chunk";
 import { runSimulation } from "../src/sim/run";
 import { interpolate } from "../src/scope/measure";
 import { buildExamples } from "../src/library/examples";
@@ -119,6 +119,66 @@ describe("chunked continuation matches one run", () => {
         expect(b.length, `${v.name} crossings`).toBe(a.length);
         // edge times agree within 0.2 % of the run (slow RC ramps cross the midpoint with a few steps' slack)
         a.forEach((t, i) => expect(Math.abs(t - b[i]), `${v.name} edge ${i} at ${t}`).toBeLessThan(stop * 2e-3 + 2 * step));
+      }
+    }, 120_000);
+  }
+});
+
+describe("hard cases for continuation", () => {
+  it("a transformer (coupled inductors) carries both winding currents across boundaries", async () => {
+    const b = new Builder();
+    const V = b.place("vsine", "V1", 0, 10, { amplitude: "10", frequency: "1k" });
+    const T = b.place("transformer", "T1", 30, 10, {});
+    const RL = b.place("resistor", "RL", 60, 10, { value: "100" });
+    const G = b.place("ground", "#PWR1", 80, 10);
+    b.label("in", b.pin(V, "1")).label("in", b.pin(T, "P1")).label("gnd", b.pin(T, "P2")).label("gnd", b.pin(V, "2"));
+    b.label("out", b.pin(T, "S1")).label("out", b.pin(RL, "1")).label("gnd", b.pin(T, "S2")).label("gnd", b.pin(RL, "2")).label("gnd", b.pin(G, "1"));
+    const { single, chunked } = await both(b.project, 5e-3, 0.37e-3, 2e-6);
+    const peak = Math.max(...vec(single, "v(out)").map(Math.abs));
+    expect(peak).toBeGreaterThan(0.5);
+    expect(rmsDiff(single, chunked, "v(out)")).toBeLessThan(0.01 * peak);
+    const ia = single.vectors.filter((v) => /^i\(l/i.test(v.name));
+    expect(ia.length).toBeGreaterThanOrEqual(2);
+    for (const v of ia) expect(rmsDiff(single, chunked, v.name), v.name).toBeLessThan(0.01 * Math.max(...v.real.map(Math.abs)) + 1e-9);
+  }, 60_000);
+
+  // A restart requested at a real sample in the middle of a fast edge (where the 555 latch's switch memory, which is
+  // not a node, would be reset half-way) steps back to a quiet sample: every later edge must match the single run.
+  for (const name of ["4-bit counter demo", "555 astable LED blinker"]) {
+    it(`"${name}": restarting at a sample inside an edge keeps every later edge`, async () => {
+      const p = buildExamples().find((e) => e.project.meta.name === name)!.project;
+      const stop = parseSI(p.simulation.tran.stop), step = parseSI(p.simulation.tran.step);
+      const single = await runSimulation(p, engine(), "tran");
+      const x = single.x!.real;
+      // a sample at 20-80 % of a voltage's swing whose neighbours differ by > 30 % of it (inside a fast edge)
+      let pick: { k: number; v: string } | null = null;
+      for (const v of single.vectors) {
+        if (v.kind !== "voltage") continue;
+        const y = v.real, lo = Math.min(...y), hi = Math.max(...y), sw = hi - lo;
+        if (sw < 1) continue;
+        for (let k = 1; k < y.length - 1 && !pick; k++) {
+          if (x[k] < stop * 0.15 || x[k] > stop * 0.6) continue;
+          const f = (y[k] - lo) / sw;
+          if (f > 0.2 && f < 0.8 && Math.abs(y[k + 1] - y[k - 1]) > 0.3 * sw) pick = { k, v: v.name };
+        }
+        if (pick) break;
+      }
+      expect(pick, "found a sample inside an edge").not.toBeNull();
+      // A restart asked for at that sample steps back to the last quiet one (the store does the same).
+      const k = safeIndex(single, pick!.k);
+      expect(k).toBeLessThan(pick!.k);
+      expect(pick!.k - k).toBeLessThan(20);
+      const t0 = x[k];
+      const rest = await runChunk(p, engine(), { t0, length: stop - t0, step, state: stateAt(single, k) });
+      expect(rest.ok, JSON.stringify(rest.diagnostics)).toBe(true);
+      for (const v of single.vectors) {
+        if (v.kind !== "voltage") continue;
+        const y = v.real, lo = Math.min(...y), hi = Math.max(...y);
+        if (hi - lo < 0.5) continue;
+        const level = (hi + lo) / 2, inside = (t: number) => t > t0 + 2 * step && t < stop - 2 * step;
+        const a = crossings(x, y, level).filter(inside), b = crossings(rest.x!.real, vec(rest, v.name), level).filter(inside);
+        expect(b.length, `${v.name} crossings after a restart inside ${pick!.v}'s edge at ${t0}`).toBe(a.length);
+        a.forEach((t, i) => expect(Math.abs(t - b[i]), `${v.name} edge ${i}`).toBeLessThan(stop * 2e-3 + 2 * step));
       }
     }, 120_000);
   }

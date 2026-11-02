@@ -289,6 +289,71 @@ describe("chunked live session in the store", () => {
   }, 60_000);
 });
 
+/** Node engine whose runs take at least `ms` (like the worker under load). */
+class SlowEngine implements SpiceEngine {
+  stops = 0;
+  constructor(private ms: number) {}
+  async run(netlist: string): Promise<EngineOutput> {
+    const [out] = await Promise.all([engine().run(netlist), new Promise((r) => setTimeout(r, this.ms))]);
+    return out;
+  }
+  stop() { this.stops++; }
+}
+
+describe("operating parts at mouse speed", () => {
+  it("a pot dragged faster than chunks compute keeps producing data; every step lands, the latest value wins", async () => {
+    const { b, P } = potDivider("50");
+    useProject.getState().load(b.project);
+    const eng = new SlowEngine(40);
+    setSimEngine(eng);
+    await useSim.getState().startLive();
+    await settle();
+    const tStart = usePlayback.getState().t!;
+    let firstCut: number | null = null;
+    const ends: number[] = [];
+    for (let k = 0, v = 50; k < 40; k++, v = Math.min(95, v + 1)) {
+      useSim.getState().change(P.id, v);
+      firstCut ??= useSim.getState().session!.lastChange!.t;
+      ends.push(endOf());
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    usePlayback.getState().pause();
+    await settle();
+    expect(eng.stops).toBe(0);
+    // during the drag the timeline kept growing past the first cut (it never froze)
+    expect(Math.max(...ends)).toBeGreaterThan(firstCut! + 0.2);
+    const changes = useSim.getState().session!.changes[P.id];
+    expect(new Set(changes.map(([t]) => t)).size).toBeGreaterThanOrEqual(3);
+    expect(changes[changes.length - 1][1]).toBe(89);
+    const r = useSim.getState().result!;
+    const tLast = changes[changes.length - 1][0];
+    expect(at(r, (n) => n === "v(out)", tLast + 0.05)).toBeCloseTo(8.9, 2);
+    expect(useSim.getState().session!.pending?.[P.id]).toBeUndefined();
+    expect(tStart).toBeGreaterThanOrEqual(0);
+    useSim.getState().reset();
+  }, 60_000);
+
+  it("a quick button click (release 10 ms after press, before the press computed) still presses", async () => {
+    const { b, S } = ledSwitch("push_button");
+    useProject.getState().load(b.project);
+    setSimEngine(new SlowEngine(40));
+    await useSim.getState().startLive();
+    await settle();
+    useSim.getState().change(S.id, 1);
+    await new Promise((r) => setTimeout(r, 10));
+    useSim.getState().change(S.id, 0);
+    usePlayback.getState().pause();
+    await settle();
+    const ch = useSim.getState().session!.changes[S.id];
+    expect(ch.map(([, v]) => v)).toEqual([1, 0]);
+    expect(ch[1][0]).toBeGreaterThan(ch[0][0]);
+    const r = useSim.getState().result!;
+    expect(ledI(r, (ch[0][0] + ch[1][0]) / 2)).toBeGreaterThan(5e-3); // lit while pressed
+    expect(Math.abs(ledI(r, ch[1][0] + 0.05))).toBeLessThan(1e-6);    // off after release
+    useSim.getState().reset();
+  }, 60_000);
+});
+
 describe("time-scale dial", () => {
   const sine = (f: string) => { const b = new Builder(); b.place("vsine", "V1", 0, 0, { frequency: f }); return b.project; };
   it("defaults to about two source periods per second, real time for a ~1 Hz 555, and offers 1-2-5 steps", () => {

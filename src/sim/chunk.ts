@@ -168,6 +168,25 @@ export function lastIndexAtOrBefore(x: ArrayLike<number>, t: number): number {
   return lo;
 }
 
+/**
+ * The restart point to use at or before sample k: the last sample where no node is in the middle of a fast edge
+ * (no node moves by more than 25 % of its swing to, from or across a neighbouring sample). Some device state is not a node
+ * (e.g. a switch model's hysteresis memory, used by the 555 latch); restarting inside an edge would reset it.
+ * Edges last a few samples, so this steps back only slightly. Returns k when no quiet sample is found nearby.
+ */
+export function safeIndex(r: SimResult, k: number, lookBack = 400): number {
+  const vs = r.vectors.filter((v) => v.kind === "voltage" && /^v\(/i.test(v.name) && !isHelper(v.name));
+  const swing = vs.map((v) => { let lo = Infinity, hi = -Infinity; for (const y of v.real) { if (y < lo) lo = y; if (y > hi) hi = y; } return hi - lo; });
+  const n = r.x!.real.length;
+  const jumps = (a: number, b: number) => a >= 0 && b < n && vs.some((v, i) => swing[i] > 1e-6 && Math.abs(v.real[b] - v.real[a]) > 0.25 * swing[i]);
+  for (let j = k; j > 1 && j >= k - lookBack; j--) {
+    // inside an edge: a big step into or out of j, or across it (an edge spread over two steps)
+    if (jumps(j - 1, j) || jumps(j, j + 1) || jumps(j - 1, j + 1) || (j + 1 >= n && jumps(j - 2, j))) continue;
+    return j;
+  }
+  return k;
+}
+
 /** Simulate [0, total] in chunks of `length` (tests and tools; live mode drives chunks from the store). */
 export async function simulateChunked(project: Project, engine: SpiceEngine, total: number, length: number, step: number): Promise<SimResult> {
   let acc: SimResult | null = null, state: ChunkState | null = null, t0 = 0;
@@ -175,8 +194,11 @@ export async function simulateChunked(project: Project, engine: SpiceEngine, tot
     const len = Math.min(length, total - t0);
     const r = await runChunk(project, engine, { t0, length: len, step, state });
     if (!r.ok || !r.x) return r;
-    acc = splice(acc, r);
-    state = stateAt(r, r.x.real.length - 1);
+    const last = r.x.real.length - 1;
+    const k = t0 + len >= total - 1e-12 ? last : safeIndex(r, last);
+    const piece = k < last ? truncate(r, k) : r;
+    acc = splice(acc, piece);
+    state = stateAt(r, k);
     t0 = state.t;
   }
   return acc!;
