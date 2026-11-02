@@ -4,27 +4,45 @@ Code: `src/launcher/**` (UI and pure logic), `electron/ipc/updates.ts`, `electro
 `scripts/release/**`. Addresses (repo, donate link, relay URL) are all in `src/launcher/config.ts`.
 
 ## The launcher (start screen)
-On startup the app shows a start screen over the editor:
+The app shows a start screen over the editor on **every start**. There's no setting to skip it. It has:
 - name, version, and whether this is the portable build or the beta channel;
+- **Launch SparkBench**, at the top and focused, so **Enter** launches (Esc and × too);
 - update status (see below);
-- **Launch SparkBench** (also Esc or ×), plus "Skip this screen on startup";
+- a **Support SparkBench** card with a large **♥ Donate** button;
 - recent projects (every `.sbproj` opened or saved; a missing file is removed with a message), Open, New;
-- tabs for **What's new**, **Feedback & bugs** and **♥ Support**.
+- tabs for **What's new** and **Feedback & bugs**.
 
-The toolbar's **Updates & info** button opens it at any time; it shows a dot when an update is available or ready.
-The **♥** button opens the donate page directly.
+Right after an update, a line says "Updated to x.y.z. Enjoying the new version? ♥ Donate". There are no popups or
+timers.
 
-The launcher never blocks the app. Every part that needs the network falls back to a message, and Launch always
-works. It doesn't open at startup when `navigator.webdriver` is set (Playwright capture and tests) or the page URL
-has `?nolauncher`, or in the plain-browser dev build (`npm run dev:web`), where the toolbar button still opens it.
+The toolbar has **Updates & info** (reopens the start screen; shows a dot when an update is available or ready) and
+a labeled **♥ Donate** button.
 
-Settings live in `%APPDATA%\SparkBench\launcher.json`: `beta`, `skipOnStartup`, `lastSeenVersion`, `recent`.
+The launcher never blocks the app. It's open from the first frame, Launch works at once (also offline or while a
+check runs), and every network-backed part falls back to a message. It doesn't open by itself in two cases:
+- automated runs (`navigator.webdriver`, i.e. Playwright capture and tests);
+- the plain-browser dev build (`npm run dev:web`).
+
+In both, the toolbar button still opens it.
+
+Settings live in `%APPDATA%\SparkBench\launcher.json`: `beta`, `lastSeenVersion`, `recent`.
 
 ## Automatic updates
 `electron-updater` (GitHub provider, `kingrebelf/Spark-bench`) runs in the main process. It's bundled into
 `dist-electron/main.js` by esbuild, so it stays a devDependency like every other runtime dependency.
 
-- The app checks 4 s after launch and every 4 hours. Nothing downloads without consent: the launcher offers
+- The app checks 4 s after launch and every 4 hours. **Versions are compared first**: the main process reads
+  GitHub's releases API and takes the newest eligible release (pre-releases only on the beta channel; semver-aware).
+  - If it isn't newer than the running version, the launcher says "You're up to date" with the newest release.
+  - Only when it is newer, and this copy can install updates itself, is electron-updater asked.
+  - A newer release without `latest.yml` becomes "A newer version (x.y.z) is available but can't be installed
+    automatically", with a button for the releases page. It's never an error.
+- **Which copies update themselves**: the installed one. It has `resources/app-update.yml` (written by
+  electron-builder for the NSIS target) and `Uninstall SparkBench.exe` next to the exe.
+  - Unpacked/`dist:dir` builds and the portable exe still compare versions and show notes.
+  - When a newer version exists, they offer "Download the new version" (the release page) and explain that
+    automatic updates work in the installed version.
+- Nothing downloads without consent: the launcher offers
   **Download update** (with its size), shows progress while you keep working, then **Restart & update**. If the
   project has unsaved changes, it asks whether to save first. A downloaded update also installs when the app is
   closed normally (`autoInstallOnAppQuit`).
@@ -33,11 +51,10 @@ Settings live in `%APPDATA%\SparkBench\launcher.json`: `beta`, `skipOnStartup`, 
   releases feed is offered, pre-release or not. With it off, only GitHub's "latest" (non-pre-release) release is
   offered. All releases are pre-releases for now, so turning it off means "no updates" until a stable release exists.
   The launcher says so.
-- **Portable exe**: electron-builder's portable launcher sets `PORTABLE_EXECUTABLE_FILE`. The portable build can't
-  replace itself, so it checks but offers **Download the new version**, which opens the release page.
+- **Portable exe**: detected through `PORTABLE_EXECUTABLE_FILE` (set by electron-builder's portable launcher).
 - **Development runs** (`npm run dev`, unpackaged): updates are disabled and the launcher says so.
 - **Offline / GitHub unreachable / rate limited**: a short message in the launcher (`explainUpdateError`), and the
-  app checks again later.
+  app checks again later. Raw errors (paths, error codes) are never shown.
 
 ### Unsigned builds: the trade-off
 The EXEs aren't code-signed. electron-updater only verifies the Authenticode signature of a downloaded installer when
@@ -55,8 +72,8 @@ into `app-update.yml` and verification turns on by itself. Users must install on
 keep the publisher name unchanged.
 
 ### Testing updates locally without publishing
-Use the `release/win-unpacked` from `npm run dist:win`. `dist:dir` doesn't write `resources/app-update.yml`, and
-without it downloads fail with "This build can't install updates itself". `SPARKBENCH_UPDATE_URL` points a packaged build at a "generic" feed: a folder served over http on localhost (or
+`SPARKBENCH_UPDATE_URL` treats the copy as self-updating and skips the GitHub comparison. Use the
+`release/win-unpacked` from `npm run dist:win`, which has `app-update.yml`. The variable points a packaged build at a "generic" feed: a folder served over http on localhost (or
 https) that holds `latest.yml` and the installer it names.
 ```bash
 # Folder with latest.yml (version raised above the running one) + the installer it names, then:
@@ -67,6 +84,10 @@ With a test feed, the updater's log lines go to stdout (`[updates] ...`). **Care
 downloaded, closing the app normally installs it (`autoInstallOnAppQuit`), for real, into the folder of the last
 SparkBench install, with shortcuts. Kill the process instead of closing it when you only want to test the download,
 or uninstall afterwards (`"<install dir>\Uninstall SparkBench.exe" /S`).
+
+**Never open the real browser from tests**: run with `SPARKBENCH_TEST_OPEN_EXTERNAL=log`. Every link the app would
+open (donate, release pages, GitHub issues) is then printed to stdout as `[open-external] <length> <url>` instead.
+Link lengths are covered by unit tests (`buildIssueUrl`).
 
 ### Users on 0.1.0
 0.1.0 predates the updater. People on it must install the next release by hand once; from then on it updates itself.
@@ -134,9 +155,14 @@ The relay (`relay/`) is written and tested but **not deployed**. Deploy steps ar
 deploying, set `FEEDBACK_RELAY_URL` and release.
 
 ## Support / donate
-`DONATE_URL` in `src/launcher/config.ts` is a Stripe Payment Link where the donor chooses the amount. The ♥ toolbar
-button and the Support tab open it in the system browser. Only https URLs are allowed (`sb:launcher:openExternal`).
-The app handles no payment data.
+`DONATE_URL` in `src/launcher/config.ts` is a Stripe Payment Link where the donor chooses the amount. It's opened
+in the system browser (https only, `sb:launcher:openExternal`) from:
+- the toolbar's **♥ Donate**;
+- the start screen's Support card;
+- the "Enjoying the new version?" line after an update.
+
+The app handles no payment data. The donate colour `#c2185b` takes white text at 8.9:1. The heart/thanks accent is
+`#ff7aa2` on dark panels and `#c2185b` on light ones. All pass WCAG AA.
 
 ## IPC channels
 `sb:launcher:info|settings|setSettings|addRecent|removeRecent|openExternal`,

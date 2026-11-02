@@ -7,11 +7,12 @@ the new version's section (when it's empty, it lists the commits since the last 
 ## Unreleased
 
 ### New
-- **Launcher / start screen** with the version, update status, recent projects, patch notes, feedback and support.
+- **Launcher / start screen** on every start, with the version, update status, recent projects, patch notes and
+  feedback. Enter or Launch goes straight to work.
 - **Automatic updates** from GitHub releases for the installed version (download in the background, install on
   restart when you choose). The portable version links to the new download instead. Beta channel on by default.
 - **Feedback and bug reports** from inside the app, with optional diagnostics and project attachment.
-- **Support SparkBench**: a donate button (any amount, via Stripe).
+- **Support SparkBench**: a ♥ Donate button in the toolbar and on the start screen (any amount, via Stripe).
 
 ## v0.1.0 — 2026-10-29 (pre-release)
 

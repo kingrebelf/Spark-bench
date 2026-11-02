@@ -9,7 +9,7 @@ import type { FeedbackPayload } from "./feedback";
 import { initialUpdateState, type UpdateState } from "./updateState";
 
 export interface AppInfo { version: string; electron: string; chrome: string; os: string; packaged: boolean; portable: boolean }
-export interface LauncherSettings { beta: boolean; skipOnStartup: boolean; lastSeenVersion?: string; recent: { path: string; name: string; openedAt: string }[] }
+export interface LauncherSettings { beta: boolean; lastSeenVersion?: string; recent: { path: string; name: string; openedAt: string }[] }
 
 const BROWSER_VERSION = PACKAGE_VERSION;
 
@@ -17,7 +17,7 @@ export const launcherApi = {
   info: (): Promise<AppInfo> => host.available ? host.invoke<AppInfo>("sb:launcher:info")
     : Promise.resolve({ version: BROWSER_VERSION, electron: "-", chrome: navigator.userAgent, os: navigator.platform, packaged: false, portable: false }),
   settings: (): Promise<LauncherSettings> => host.available ? host.invoke<LauncherSettings>("sb:launcher:settings")
-    : Promise.resolve({ beta: true, skipOnStartup: true, recent: [] }),
+    : Promise.resolve({ beta: true, recent: [] }),
   setSettings: (patch: Partial<LauncherSettings>): Promise<LauncherSettings> => host.invoke<LauncherSettings>("sb:launcher:setSettings", patch),
   addRecent: (p: string) => host.invoke<LauncherSettings["recent"]>("sb:launcher:addRecent", p),
   removeRecent: (p: string) => host.invoke<LauncherSettings["recent"]>("sb:launcher:removeRecent", p),

@@ -1,5 +1,6 @@
-// Start screen: version, update status, Launch, recent projects, and the What's new / Feedback / Support sections.
-// It never blocks the app: every network-backed part degrades to a message, and Launch always works.
+// Start screen, shown on every start: version, Launch, update status, Support (donate), recent projects, and the
+// What's new / Feedback sections. It never blocks the app: every network-backed part degrades to a message, and
+// Launch (also Enter or Esc) always works at once.
 import { useEffect, useMemo, useState } from "react";
 import changelog from "../../CHANGELOG.md?raw";
 import logo from "../../build/icon.png";
@@ -11,10 +12,10 @@ import { DONATE_URL, RELEASES_URL } from "./config";
 import { FeedbackForm } from "./FeedbackForm";
 import { Markdown } from "./MarkdownView";
 import { compareVersions, newSince, parseChangelog, type NotesResult } from "./notes";
-import { formatBytes, type UpdateState } from "./updateState";
+import { formatBytes, manualText, type UpdateState } from "./updateState";
 import "./launcher.css";
 
-export type LauncherTab = "notes" | "feedback" | "support";
+export type LauncherTab = "notes" | "feedback";
 
 interface Props {
   info: AppInfo | null;
@@ -30,7 +31,12 @@ interface Props {
 
 export function Launcher({ info, settings, update, previousVersion, tab, setTab, onSettings, onClose }: Props) {
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      // Enter launches, unless it belongs to a field or another button/link.
+      const t = e.target as HTMLElement | null;
+      if (e.key === "Enter" && !(t && t.closest("input, textarea, select, button, a, [contenteditable]"))) { e.preventDefault(); onClose(); }
+    };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [onClose]);
@@ -55,15 +61,18 @@ export function Launcher({ info, settings, update, previousVersion, tab, setTab,
             </div>
           </div>
 
-          <UpdateCard update={update} beta={settings?.beta ?? true} onBeta={(beta) => setSetting({ beta })} onNotes={() => setTab("notes")} />
+          {info && previousVersion && compareVersions(info.version, previousVersion) > 0 && (
+            <div className="updated-note">
+              Updated to {info.version}. Enjoying the new version?{" "}
+              <button className="link-donate" onClick={launcherApi.donate}>♥ Donate</button>
+            </div>
+          )}
 
           <button className="launcher-launch" onClick={onClose} autoFocus>Launch SparkBench</button>
-          {host.available && (
-            <label className="launcher-check">
-              <input type="checkbox" checked={!!settings?.skipOnStartup} onChange={(e) => setSetting({ skipOnStartup: e.target.checked })} />
-              <span>Skip this screen on startup <span className="dim">(open it again with “Updates &amp; info”)</span></span>
-            </label>
-          )}
+
+          <UpdateCard update={update} beta={settings?.beta ?? true} onBeta={(beta) => setSetting({ beta })} onNotes={() => setTab("notes")} />
+
+          <SupportCard />
 
           <RecentProjects settings={settings} onSettings={onSettings} onOpened={onClose} />
         </aside>
@@ -72,14 +81,12 @@ export function Launcher({ info, settings, update, previousVersion, tab, setTab,
           <nav className="launcher-tabs" role="tablist">
             <button role="tab" aria-selected={tab === "notes"} className={tab === "notes" ? "on" : ""} onClick={() => setTab("notes")}>What's new</button>
             <button role="tab" aria-selected={tab === "feedback"} className={tab === "feedback" ? "on" : ""} onClick={() => setTab("feedback")}>Feedback &amp; bugs</button>
-            <button role="tab" aria-selected={tab === "support"} className={tab === "support" ? "on" : ""} onClick={() => setTab("support")}>♥ Support</button>
             <span className="grow" />
             <button className="launcher-x" onClick={onClose} title="Close (Esc)" aria-label="Close">×</button>
           </nav>
           <div className="launcher-body">
             {tab === "notes" && <PatchNotes current={info?.version} previous={previousVersion} latest={update?.version} />}
             {tab === "feedback" && <FeedbackForm info={info} />}
-            {tab === "support" && <Support />}
           </div>
         </section>
       </div>
@@ -111,16 +118,17 @@ function UpdateCard({ update, beta, onBeta, onNotes }: { update: UpdateState | n
     case "none":
       body = <>
         <div className="update-line ok">✓ You're up to date</div>
-        <div className="dim">v{update.currentVersion}{checked}</div>
+        <div className="dim">v{update.currentVersion}{update.latestVersion ? ` · newest release ${update.latestVersion}` : ""}{checked}</div>
+        {!update.selfUpdate && !update.portable && <div className="dim">Automatic updates work in the installed version.</div>}
         <div className="update-actions"><button className="btn" disabled={busy} onClick={act(launcherApi.check)}>Check again</button></div>
       </>;
       break;
     case "available":
       body = <>
         <div className="update-line accent">Version {update.version} is available{update.sizeBytes ? ` · ${formatBytes(update.sizeBytes)}` : ""}</div>
-        {update.portable && <div className="dim">The portable version can't update itself. Download the new one and replace this file.</div>}
+        {update.manual && <div className="dim">{manualText(update)}</div>}
         <div className="update-actions">
-          <button className="btn primary" disabled={busy} onClick={act(launcherApi.download)}>{update.portable ? "Download the new version" : "Download update"}</button>
+          <button className="btn primary" disabled={busy} onClick={act(launcherApi.download)}>{update.manual ? "Download the new version" : "Download update"}</button>
           <button className="btn" onClick={onNotes}>What's new?</button>
         </div>
       </>;
@@ -144,7 +152,7 @@ function UpdateCard({ update, beta, onBeta, onNotes }: { update: UpdateState | n
         <div className={`update-line ${update.offline ? "" : "warn"}`}>{update.offline ? "Offline" : "Couldn't update"}</div>
         <div className="dim">{update.message}</div>
         <div className="update-actions">
-          {update.version && !update.portable
+          {update.version && update.selfUpdate && !update.manual
             ? <button className="btn primary" disabled={busy} onClick={act(launcherApi.download)}>Retry download</button>
             : <button className="btn" disabled={busy} onClick={act(launcherApi.check)}>Try again</button>}
           {!update.offline && <button className="btn" onClick={() => launcherApi.openExternal(RELEASES_URL)}>Releases page</button>}
@@ -245,15 +253,18 @@ function PatchNotes({ current, previous, latest }: { current?: string; previous?
   );
 }
 
-function Support() {
+function SupportCard() {
   return (
-    <div className="support">
-      <div className="support-heart" aria-hidden>♥</div>
-      <h2>Support SparkBench</h2>
-      <p>SparkBench is free; if it helps you, you can chip in any amount.</p>
-      <p className="dim">Payments go through Stripe in your browser. You choose the amount; nothing is stored in SparkBench.</p>
-      <button className="launcher-launch donate" onClick={() => launcherApi.openExternal(DONATE_URL)}>Donate any amount</button>
-      <p className="dim">Other ways to help: report bugs, suggest ideas, or star the project on GitHub.</p>
-    </div>
+    <section className="support-card" aria-labelledby="support-title">
+      <h2 id="support-title"><span className="support-heart" aria-hidden>♥</span> Support SparkBench</h2>
+      <p>
+        SparkBench is free, and it's built by one person. Making it took a great deal of precious time and effort:
+        designing, coding, testing and fixing, late into the night. If it's useful to you, please consider donating
+        any amount. Every contribution helps keep SparkBench free and growing.
+      </p>
+      <button className="donate-btn big" onClick={() => launcherApi.openExternal(DONATE_URL)}>♥ Donate</button>
+      <p className="support-thanks">Thank you so much for supporting this project! ♥</p>
+      <p className="dim">Opens a secure Stripe page in your browser, where you choose the amount.</p>
+    </section>
   );
 }

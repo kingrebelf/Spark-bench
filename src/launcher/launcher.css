@@ -78,17 +78,30 @@
 .launcher-error { color: var(--error); font-size: 13px; margin: 0; padding-left: 0; list-style: none; }
 .launcher-ok { color: var(--ok); font-size: 13px; }
 
-.support { max-width: 520px; margin: 30px auto; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.support h2 { margin: 0; }
-.support p { margin: 0; font-size: 15px; }
-.support-heart { font-size: 54px; color: #ff5c8a; line-height: 1; }
-.launcher-launch.donate { background: linear-gradient(180deg, #ff6f98, #d6336c); border-color: #ff5c8a; box-shadow: 0 6px 20px rgba(214, 51, 108, 0.35); margin: 10px 0; }
-
 .launcher-tb { position: relative; }
 .launcher-tb .dot { position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
-.btn.heart { color: #ff5c8a; font-size: 15px; line-height: 1; padding: 4px 9px; }
 
 @media (max-width: 900px) {
   .launcher-card { grid-template-columns: 1fr; height: 100%; overflow: auto; }
   .launcher-side { border-right: none; border-bottom: 1px solid var(--border); }
 }
+
+/* Donate: a warm accent that stands apart from the blue Launch button. White on #c2185b is 8.9:1; the heart/thanks
+   colour is per theme (#ff7aa2 on dark panels ≈ 6:1, #c2185b on light ≈ 7.9:1), all WCAG AA. */
+:root { --donate: #c2185b; --donate-hover: #ad1457; --donate-fg: #ff7aa2; --donate-tint: rgba(255, 122, 162, 0.08); }
+@media (prefers-color-scheme: light) { :root { --donate-fg: #c2185b; --donate-tint: rgba(194, 24, 91, 0.05); } }
+.donate-btn {
+  background: var(--donate); color: #fff; border: 1px solid var(--donate); border-radius: 6px; padding: 4px 12px;
+  font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.donate-btn:hover { background: var(--donate-hover); border-color: var(--donate-hover); }
+.donate-btn.big { font-size: 16px; padding: 10px 18px; border-radius: 10px; width: 100%; box-shadow: 0 4px 14px rgba(194, 24, 91, 0.3); }
+.support-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--donate-fg) 45%, var(--border)); background: var(--donate-tint); }
+.support-card h2 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+.support-card p { margin: 0; font-size: 13px; line-height: 1.5; }
+.support-card .dim { font-size: 11.5px; }
+.support-heart { color: var(--donate-fg); }
+.support-thanks { color: var(--donate-fg); font-weight: 600; text-align: center; }
+.updated-note { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); }
+.link-donate { background: none; border: none; padding: 0; color: var(--donate-fg); font-weight: 700; cursor: pointer; }
+.link-donate:hover { text-decoration: underline; }
