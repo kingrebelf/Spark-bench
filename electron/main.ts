@@ -4,11 +4,15 @@ import { pathToFileURL } from "node:url";
 import { registerFileIpc } from "./ipc/files";
 import { registerAiIpc } from "./ipc/ai";
 import { registerKicadIpc } from "./ipc/kicad";
+import { registerUpdatesIpc } from "./ipc/updates";
+import { registerFeedbackIpc } from "./ipc/feedback";
 
 // Each feature module registers its own IPC handlers here (files, kicad, ai, ...).
 registerFileIpc();
 registerAiIpc();
 registerKicadIpc();
+registerUpdatesIpc();
+registerFeedbackIpc();
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 const DIST = path.join(__dirname, "..", "dist");

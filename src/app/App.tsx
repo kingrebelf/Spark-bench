@@ -7,6 +7,7 @@ import { useEditor } from "../editor/store";
 import { SimPanel } from "../sim/SimPanel";
 import { AssistantPanel } from "../ai/AssistantPanel";
 import { KicadPanel } from "../kicad/KicadPanel";
+import { LauncherControls } from "../launcher/LauncherControls";
 import { ExamplesMenu } from "./Examples";
 import { checkRecovery, newProject, openProject, saveProject, startRecoveryAutosave } from "./fileActions";
 import { useApp } from "./store";
@@ -61,6 +62,7 @@ export function App() {
         <button className={`btn ${tool === "label" ? "on" : ""}`} onClick={() => setTool("label")} title="Net label">Label</button>
         <span className="grow" />
         <span className="filename" title={filePath ?? "Not saved yet"}>{project.meta.name}{dirty ? " •" : ""}</span>
+        <LauncherControls />
       </header>
 
       {recovery && (
