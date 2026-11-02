@@ -59,11 +59,23 @@ function emit(e: UpdateEvent) {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("sb:updates:changed", state);
 }
 
+function testFeedUrl(): string | null {
+  const raw = process.env.SPARKBENCH_UPDATE_URL;
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" || (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname)) ? u.toString() : null;
+  } catch { return null; }
+}
+
 async function getUpdater(): Promise<AppUpdater> {
   if (updater) return updater;
   // Loaded lazily: dev runs never touch it. Bundled by esbuild into dist-electron/main.js.
   const { autoUpdater } = await import("electron-updater");
-  autoUpdater.setFeedURL({ provider: "github", owner: REPO_OWNER, repo: REPO_NAME });
+  // SPARKBENCH_UPDATE_URL points a packaged build at a local test feed (latest.yml + installer); see docs/updates.md.
+  const testFeed = testFeedUrl();
+  if (testFeed) autoUpdater.setFeedURL({ provider: "generic", url: testFeed });
+  else autoUpdater.setFeedURL({ provider: "github", owner: REPO_OWNER, repo: REPO_NAME });
   autoUpdater.autoDownload = false;          // download only when the user says so
   autoUpdater.autoInstallOnAppQuit = true;   // a downloaded update installs when the app closes
   autoUpdater.allowDowngrade = false;
