@@ -60,6 +60,9 @@ Writes `<name>.kicad_pro`, `<name>.kicad_sch` and, if chosen, `<name>.kicad_pcb`
 - **Library tables.** If KiCad has no global `sym-lib-table`/`fp-lib-table` yet (fresh install), project tables
   listing only the used KiCad libraries (through `${KICAD10_SYMBOL_DIR}` / `${KICAD10_FOOTPRINT_DIR}`) are written,
   so the project resolves its libraries in KiCad and `kicad-cli`.
+  Library nicknames are read from the user's global tables first; KiCad 10's default global table is a single
+  nested `(type "Table")` entry pointing at the template table, which is expanded (recursively, depth-limited).
+  Symbol and footprint search use the same tables.
 
 ### Verification after every export
 
