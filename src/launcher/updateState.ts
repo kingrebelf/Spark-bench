@@ -87,6 +87,8 @@ export function explainUpdateError(raw: string, beta: boolean): { message: strin
     return { offline: false, message: "The newest release on GitHub has no update information (latest.yml), so it can't be installed automatically. Download it from the releases page." };
   if (/No published versions|Unable to find latest version/i.test(m) || (/releases\/latest/.test(m) && /404/.test(m)))
     return { offline: false, message: beta ? "No releases are published on GitHub yet." : "No stable release is published yet. Turn on the beta channel to get pre-releases." };
+  if (/app-update\.yml/i.test(m) && /ENOENT/.test(m))
+    return { offline: false, message: "This build can't install updates itself (it has no update configuration). Download new versions from the releases page." };
   if (/\b(403|429)\b|rate limit/i.test(m)) return { offline: false, message: "GitHub is limiting requests right now. SparkBench will try again later." };
   if (/sha512 checksum mismatch/i.test(m)) return { offline: false, message: "The downloaded update didn't match its checksum and was discarded. Try again." };
   const first = m.split(/\r?\n/)[0].slice(0, 200);

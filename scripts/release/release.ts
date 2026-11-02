@@ -138,7 +138,7 @@ async function main() {
       log("building (npm run dist:win)…");
       // No token in the build's environment: electron-builder must never publish on its own.
       const env = { ...process.env }; delete env.GH_TOKEN; delete env.GITHUB_TOKEN;
-      const b = spawnSync("npm", ["run", "dist:win"], { cwd: ROOT, stdio: "inherit", shell: true, env });
+      const b = spawnSync("npm run dist:win", { cwd: ROOT, stdio: "inherit", shell: true, env });
       if (b.status !== 0) throw new Error(`npm run dist:win failed (${b.status})`);
     }
     const check = verifyArtifacts(OUT, version);

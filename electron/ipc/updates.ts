@@ -79,7 +79,7 @@ async function getUpdater(): Promise<AppUpdater> {
   autoUpdater.autoDownload = false;          // download only when the user says so
   autoUpdater.autoInstallOnAppQuit = true;   // a downloaded update installs when the app closes
   autoUpdater.allowDowngrade = false;
-  autoUpdater.logger = { info: () => {}, warn: (m: unknown) => console.warn("[updates]", m), error: (m: unknown) => console.error("[updates]", m), debug: () => {} };
+  autoUpdater.logger = { info: (m: unknown) => { if (testFeed) console.log("[updates]", m); }, warn: (m: unknown) => console.warn("[updates]", m), error: (m: unknown) => console.error("[updates]", m), debug: () => {} };
   autoUpdater.on("checking-for-update", () => emit({ type: "checking" }));
   autoUpdater.on("update-available", (i) => emit({ type: "available", version: i.version, files: i.files }));
   autoUpdater.on("update-not-available", (i) => emit({ type: "not-available", version: i?.version }));

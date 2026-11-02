@@ -61,7 +61,7 @@ export function Launcher({ info, settings, update, previousVersion, tab, setTab,
           {host.available && (
             <label className="launcher-check">
               <input type="checkbox" checked={!!settings?.skipOnStartup} onChange={(e) => setSetting({ skipOnStartup: e.target.checked })} />
-              Skip this screen on startup <span className="dim">(open it again with “Updates &amp; info”)</span>
+              <span>Skip this screen on startup <span className="dim">(open it again with “Updates &amp; info”)</span></span>
             </label>
           )}
 
@@ -158,7 +158,7 @@ function UpdateCard({ update, beta, onBeta, onNotes }: { update: UpdateState | n
       {update.phase !== "disabled" && (
         <label className="launcher-check small">
           <input type="checkbox" checked={beta} onChange={(e) => onBeta(e.target.checked)} />
-          Include pre-releases (beta channel)
+          <span>Include pre-releases (beta channel)</span>
         </label>
       )}
     </div>
@@ -208,7 +208,9 @@ function PatchNotes({ current, previous, latest }: { current?: string; previous?
   const bundled = useMemo(() => parseChangelog(changelog), []);
   useEffect(() => { let live = true; launcherApi.notes().then((n) => live && setNotes(n), (e) => live && setNotes({ source: "bundled", releases: [], error: String(e?.message ?? e) })); return () => { live = false; }; }, []);
   if (!notes) return <div className="dim"><span className="spinner" /> Loading release notes…</div>;
-  const releases = notes.releases.length ? notes.releases : bundled;
+  // GitHub (or its cached copy) first; bundled CHANGELOG entries fill in versions GitHub doesn't list (yet).
+  const known = new Set(notes.releases.map((r) => r.version));
+  const releases = [...notes.releases, ...bundled.filter((r) => !known.has(r.version))].sort((a, b) => compareVersions(b.version, a.version));
   const source = notes.releases.length ? notes.source : "bundled";
   const fresh = current ? newSince(releases, previous, current) : new Set<string>();
   return (

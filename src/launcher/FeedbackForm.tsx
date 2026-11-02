@@ -97,11 +97,11 @@ export function FeedbackForm({ info }: { info: AppInfo | null }) {
       <input className="hp" tabIndex={-1} autoComplete="off" aria-hidden="true" name="website" value={f.website} onChange={(e) => set("website", e.target.value)} />
       <label className="launcher-check">
         <input type="checkbox" checked={f.includeDiagnostics} onChange={(e) => set("includeDiagnostics", e.target.checked)} />
-        Include diagnostics <span className="dim">(app version, OS, Electron version, current problems and the recent simulation log)</span>
+        <span>Include diagnostics <span className="dim">(app version, OS, Electron version, current problems and the recent simulation log)</span></span>
       </label>
       <label className="launcher-check">
         <input type="checkbox" checked={f.attachProject} onChange={(e) => set("attachProject", e.target.checked)} />
-        Attach my current project <span className="dim">({status?.relay ? "its contents become part of the public issue" : "you'll be asked to drag the .sbproj file into the issue"})</span>
+        <span>Attach my current project <span className="dim">({status?.relay ? "its contents become part of the public issue" : "you'll be asked to drag the .sbproj file into the issue"})</span></span>
       </label>
       {errors.length > 0 && <ul className="launcher-error">{errors.map((x) => <li key={x}>{x}</li>)}</ul>}
       <div className="update-actions">
@@ -122,7 +122,7 @@ function OutcomeLine({ o }: { o: Outcome }) {
     case "sent":
       return <div className="launcher-ok">✓ Thanks! Your report was filed{o.issueUrl && <> as <a href={o.issueUrl} onClick={(e) => { e.preventDefault(); launcherApi.openExternal(o.issueUrl!); }}>a GitHub issue</a></>}.</div>;
     case "queued":
-      return <div className="launcher-ok">Saved. SparkBench couldn't reach the feedback service ({o.error}); it will send the report automatically when it can.</div>;
+      return <div className="launcher-ok">Saved on this computer. It couldn't be delivered yet ({o.error.replace(/\.$/, "")}), so SparkBench will send it automatically later.</div>;
     case "browser":
       return <div className="launcher-ok">✓ GitHub opened in your browser with the report filled in. Sign in if asked, then press “Submit new issue”.</div>;
     case "failed":

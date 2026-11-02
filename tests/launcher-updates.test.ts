@@ -54,6 +54,7 @@ describe("update errors in plain words", () => {
     ["Cannot find latest.yml in the latest release artifacts (https://github.com/x/y/releases/download/v0.1.0/latest.yml): HttpError: 404", false, /latest\.yml/],
     ["HttpError: 403 Forbidden rate limit exceeded", false, /limiting/],
     ["sha512 checksum mismatch, expected abc", false, /checksum/],
+    ["Error: ENOENT: no such file or directory, open 'C:\\x\\resources\\app-update.yml'", false, /no update configuration/],
   ])("%s", (raw, offline, re) => {
     const r = explainUpdateError(raw, true);
     expect(r.offline).toBe(offline);

@@ -118,6 +118,7 @@ export function releaseBody(notes: string, version: string, sums: Record<string,
   const n = assetNames(version);
   return [
     notes.trim(),
+    "",
     "## Install",
     `- **${n.installer}**: installer. Installed copies update themselves (SparkBench → Updates & info).`,
     `- **${n.portable}**: a single file, no install. It can't update itself; the launcher tells you when a new version is out.`,
