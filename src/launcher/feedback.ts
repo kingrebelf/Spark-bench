@@ -88,7 +88,7 @@ export function buildPayload(f: FeedbackForm, ctx: FeedbackContext): { ok: true;
     };
   }
   if (f.attachProject && ctx.project !== undefined) {
-    if (ctx.project.length <= LIMITS.projectChars) p.project = { name: ctx.projectName || "project", text: ctx.project };
+    if (ctx.project.length <= LIMITS.projectChars) p.project = { name: (ctx.projectName || "project").slice(0, 120), text: ctx.project };
     else p.projectOmitted = `The project is ${Math.round(ctx.project.length / 1024)} KB, too large to attach automatically (max ${Math.round(LIMITS.projectChars / 1024)} KB).`;
   }
   if (new TextEncoder().encode(JSON.stringify(p)).length > LIMITS.payloadBytes) {

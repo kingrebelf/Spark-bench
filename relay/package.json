@@ -1,0 +1,12 @@
+{
+  "name": "sparkbench-feedback-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Turns SparkBench in-app feedback into labeled GitHub issues.",
+  "type": "module",
+  "engines": { "node": ">=22.6" },
+  "scripts": {
+    "start": "node server.ts"
+  },
+  "license": "MIT"
+}
