@@ -14,6 +14,16 @@ the new version's section (when it's empty, it lists the commits since the last 
 - **Feedback and bug reports** from inside the app, with optional diagnostics and project attachment.
 - **Support SparkBench**: a ♥ Donate button in the toolbar and on the start screen (any amount, via Stripe).
 
+### Improved
+- **Instant live changes**: moving a pot, flipping a switch or pressing a button during a live run now shows up
+  on the scope and canvas in milliseconds (it used to take up to tens of seconds). Live mode continues in short
+  chunks from the circuit's saved state instead of re-simulating from 0 s; every chunk is still a real ngspice run.
+- Sine, pulse and triangle sources, the 555 and logic parts stay in phase across live chunks.
+
+### Fixed
+- **KiCad export found no symbols after KiCad 10 had been opened once** (KiCad 10 switches your library list to a
+  nested format). SparkBench now reads the new format.
+
 ## v0.1.0 — 2026-10-29 (pre-release)
 
 First public build. Windows only; the EXEs are not code-signed.
