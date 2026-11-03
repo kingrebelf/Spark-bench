@@ -6,6 +6,8 @@ the new version's section (when it's empty, it lists the commits since the last 
 
 ## Unreleased
 
+## v0.1.2 — 2026-11-03 (pre-release)
+
 ### Improved
 - **Smooth, steady live view.** The scope no longer jumps, resizes or flickers while a circuit runs:
   - Moving a pot or flipping a switch no longer makes playback stutter: changes take effect a moment ahead of the
