@@ -6,6 +6,8 @@ the new version's section (when it's empty, it lists the commits since the last 
 
 ## Unreleased
 
+## v0.1.3 — 2026-11-03 (pre-release)
+
 ### New
 - **Change any value while the circuit runs.** Resistance, capacitance, inductance, source frequency and amplitude,
   model parameters: edit them during a live run and the scope responds within about 0.1 s, continuing from the
