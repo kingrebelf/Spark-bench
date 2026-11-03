@@ -4,7 +4,7 @@
 // Mouse:  wheel = zoom time/frequency axis · Shift+wheel = zoom y · drag = box zoom ·
 //         right/middle-drag or Alt+drag = pan · double-click = autoscale ·
 //         click = cursor A (Shift+click = cursor B) when cursors are on, otherwise seek playback.
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
 import { formatSI } from "../core/units";
 import { logTicks, niceTicks, tickLabel } from "./axes";
 import { decimate } from "./decimate";
@@ -42,6 +42,11 @@ interface Props {
   resetKey?: unknown;
   /** Fixed x grid spacing (scope divisions); default: nice ticks. */
   xDiv?: number;
+  /**
+   * Live scope: the `follow` window is shown from the first frame (data fills it from the left) and never widens
+   * as data accumulates; while scrolling, the y range only grows (rounded, with headroom) so traces don't bounce.
+   */
+  fixedWindow?: boolean;
   onSeek?: (x: number) => void;
   /** Show the min/max/avg/RMS/pk-pk/frequency table (time-domain plots). */
   measurements?: boolean;
@@ -62,7 +67,7 @@ function cssVar(el: Element, name: string, fallback: string) {
   return getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 }
 
-export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, follow, resetKey, xDiv, onSeek, measurements, height, handle }: Props) {
+export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, follow, resetKey, xDiv, fixedWindow, onSeek, measurements, height, handle }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
@@ -77,10 +82,14 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
   // Reset zoom when the data set changes (a new run).
   const firstX = series[0]?.x;
   const reset = resetKey === undefined ? firstX : resetKey;
-  useEffect(() => { setView({ x: null, y: {} }); setCursors({ a: null, b: null }); }, [reset]);
+  /** Sticky (expand-only) y ranges while scrolling, per pane:axis. */
+  const sticky = useRef<Record<string, Range>>({});
+  useEffect(() => { setView({ x: null, y: {} }); setCursors({ a: null, b: null }); sticky.current = {}; }, [reset]);
 
-  useEffect(() => {
+  // Measure before the first paint, so the first frame is drawn at the real width (no narrow-then-wide jump).
+  useLayoutEffect(() => {
     const el = wrapRef.current; if (!el) return;
+    setWidth(Math.max(200, Math.floor(el.clientWidth)));
     const ro = new ResizeObserver(() => setWidth(Math.max(200, Math.floor(el.clientWidth))));
     ro.observe(el);
     return () => ro.disconnect();
@@ -97,11 +106,13 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
     return [lo, hi];
   }, [series, xLog]);
   const followRange = useMemo<Range | null>(() => {
-    if (view.x || follow == null || playhead == null || xLog || extent[1] - extent[0] <= follow) return null;
-    // Scroll continuously like a scope in roll mode: the playhead stays at 90 % of the width.
-    const lo = Math.min(extent[1] - follow, Math.max(extent[0], playhead - follow * 0.9));
+    if (view.x || follow == null || playhead == null || xLog) return null;
+    if (!fixedWindow && extent[1] - extent[0] <= follow) return null;
+    // Scroll continuously with the playhead (at 90 % of the width), like a scope in roll mode. The window is
+    // anchored to the playhead only, never to how far the data has been computed.
+    const lo = fixedWindow ? Math.max(extent[0], playhead - follow * 0.9) : Math.max(extent[0], Math.min(playhead - follow * 0.9, extent[1] - follow));
     return [lo, lo + follow];
-  }, [view.x, follow, playhead, xLog, extent]);
+  }, [view.x, follow, playhead, xLog, extent, fixedWindow]);
   const xr: Range = view.x ?? followRange ?? extent;
   const lim = hideAfter ?? Infinity;
 
@@ -120,19 +131,34 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
       if (!spec[side]) return;
       const key = `${p}:${side}`;
       if (view.y[key]) { out[key] = view.y[key]; return; }
+      const scrolling = !!followRange && fixedWindow;
       let lo = Infinity, hi = -Infinity;
       for (const s of visible) {
         if (s.pane !== p || s.axis !== side) continue;
+        // (while scrolling this includes the computed lead ahead of the playhead, so the range is right from frame 1)
         const a = Math.max(0, lowerBound(s.x, xr[0]) - 1), b = Math.min(s.x.length, lowerBound(s.x, xr[1]) + 1);
         for (let i = a; i < b; i++) { const v = s.y[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
       }
-      if (!Number.isFinite(lo)) { lo = -1; hi = 1; }
+      if (!Number.isFinite(lo)) { if (scrolling && sticky.current[key]) { out[key] = sticky.current[key]; return; } lo = -1; hi = 1; }
       if (hi - lo < 1e-15 + Math.abs(hi) * 1e-9) { const d = Math.abs(hi) * 0.1 || 1; lo -= d; hi += d; }
+      if (scrolling) {
+        // a quiet signal (e.g. 1e-28 A of leakage) must not set a femto-scale axis: minimum span per unit
+        const unit = spec[side]!.unit, floor = unit === "A" ? 1e-9 : unit === "V" ? 0.01 : 1e-9;
+        if (hi - lo < floor) { const mid = (hi + lo) / 2; lo = Math.min(lo, mid - floor / 2); hi = Math.max(hi, mid + floor / 2); }
+      }
       const pad = (hi - lo) * 0.06;
-      out[key] = [lo - pad, hi + pad];
+      let r: Range = [lo - pad, hi + pad];
+      if (scrolling) {
+        // Expand only, rounded outward to a nice step, so the traces never bounce while the window scrolls.
+        const prev = sticky.current[key];
+        if (prev) r = [Math.min(prev[0], r[0]), Math.max(prev[1], r[1])];
+        r = niceOutward(r);
+        sticky.current[key] = r;
+      }
+      out[key] = r;
     }));
     return out;
-  }, [panes, visible, view.y, xr]);
+  }, [panes, visible, view.y, xr, followRange, fixedWindow]);
 
   const yToPx = (key: string, v: number) => {
     const [lo, hi] = yRanges[key]; const p = Number(key.split(":")[0]);
@@ -363,7 +389,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
       return next;
     });
   };
-  const autoscale = () => setView({ x: null, y: {} });
+  const autoscale = () => { sticky.current = {}; setView({ x: null, y: {} }); };
 
   // ---------------------------------------------------------------- readouts
   const cA = cursorsOn ? cursors.a : null, cB = cursorsOn ? cursors.b : null;
@@ -391,7 +417,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
         </label>
         <span className="hint">Wheel: zoom · drag: box zoom · right-drag: pan · Shift+wheel: y zoom · double-click: fit</span>
       </div>
-      <div className="plot-canvas" style={{ height }}>
+      <div className="plot-canvas" style={{ height }} data-xrange={`${xr[0]},${xr[1]}`} data-yrange={Object.entries(yRanges).map(([k, [a, b]]) => `${k}=${a},${b}`).join(";")}>
         <canvas ref={baseRef} style={{ width, height }} />
         <canvas ref={overRef} style={{ width, height }} className="plot-over" aria-label={`Plot of ${visible.map((s) => s.label).join(", ")}`} role="img"
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onWheel={onWheel}
@@ -440,6 +466,15 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
 }
 
 const fmtX = (v: number, unit: string) => formatSI(v, unit, 4);
+
+/** Round a range outward to a 1-2-5 step (about 4-10 steps across it). */
+function niceOutward([lo, hi]: Range): Range {
+  const span = hi - lo;
+  if (!(span > 0)) return [lo, hi];
+  let step = 10 ** Math.floor(Math.log10(span));
+  if (span / step < 2) step /= 5; else if (span / step < 5) step /= 2;
+  return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step];
+}
 
 /** Grid lines every `div` (scope divisions); labels on every line when there is room, else every other one. */
 function divTicks(xr: [number, number], div: number, plotW: number): { value: number; major: boolean }[] {

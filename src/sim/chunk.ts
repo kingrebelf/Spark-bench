@@ -153,7 +153,7 @@ export function splice(a: SimResult | null, b: SimResult): SimResult {
     ...b,
     x: { ...a.x, real: [...a.x.real, ...b.x.real.slice(skip)] },
     vectors,
-    diagnostics: b.diagnostics,
+    diagnostics: a.diagnostics, // the run's diagnostics stay put (a list that changed per chunk would make the panel jump)
     log: b.log,
     netlist: b.netlist,
   };

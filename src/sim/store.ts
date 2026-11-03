@@ -85,8 +85,13 @@ const settingsKey = (p: Project, a: AnalysisKind) => JSON.stringify(a === "tran"
 let token = 0;
 let pendingRerun = false;
 /** Engine used by the store; tests swap in the Node engine. */
-let engine: SpiceEngine & { stop?: () => void } = workerEngine;
-export const setSimEngine = (e: SpiceEngine & { stop?: () => void }) => { engine = e; };
+let engine: SpiceEngine & { stop?: () => void; init?: () => Promise<unknown> } = workerEngine;
+export const setSimEngine = (e: SpiceEngine & { stop?: () => void; init?: () => Promise<unknown> }) => { engine = e; };
+/** Load ngspice ahead of the first run (the panel calls this on mount; Stop/Reset call it after terminating). */
+export const warmUpEngine = () => { void engine.init?.().catch(() => { /* the next run reports any failure */ }); };
+/** Wall time of the last chunk, and from a change to its first data on screen (running averages). */
+let lastChunkMs = 20;
+let changeLatencyMs = 40;
 
 /** Seconds of playback kept behind the playhead in live sessions (older samples are dropped). */
 export const HISTORY_SECONDS = 30;
@@ -203,7 +208,9 @@ export const useSim = create<SimState>((set, get) => {
         const project = projectOf();
         const open = Object.entries(s.damage).filter(([, l]) => failedAt(l, end)).map(([id]) => id);
         const from = transitionFrom ?? undefined, rec = reconnect;
+        const w0 = performance.now();
         const chunk = await runChunk(project, engine, { t0: end, length, step: s.plan.step, params, open, from, reconnect: rec, state: stateAt(r, x.length - 1) });
+        lastChunkMs = 0.7 * lastChunkMs + 0.3 * (performance.now() - w0);
         if (myGen !== gen || myToken !== token) continue; // a change, repair or new run happened meanwhile
         transitionFrom = null;
         reconnect = [];
@@ -234,7 +241,9 @@ export const useSim = create<SimState>((set, get) => {
         append(piece, pieceTracks);
         if (firstAfterChange && changeWall != null) {
           const cur = get().session!;
-          set({ session: { ...cur, lastChange: { t: cur.lastChange?.t ?? end, latencyMs: Math.round(performance.now() - changeWall) } } });
+          const ms = performance.now() - changeWall;
+          changeLatencyMs = 0.7 * changeLatencyMs + 0.3 * ms;
+          set({ session: { ...cur, lastChange: { t: cur.lastChange?.t ?? end, latencyMs: Math.round(ms) } } });
           changeWall = null;
         }
         firstAfterChange = false;
@@ -373,7 +382,12 @@ export const useSim = create<SimState>((set, get) => {
         return;
       }
       const pb = usePlayback.getState();
-      applyChange(componentId, value, at ?? pb.t ?? pb.t1);
+      // While playing, a change lands a moment ahead of the playhead (2.5x the measured change-to-screen time,
+      // 60-250 ms of wall time), so the playhead keeps playing through data already computed while the new chunk
+      // computes: it never stops for a change.
+      const now = pb.t ?? pb.t1;
+      const ahead = pb.playing ? Math.min(0.25, Math.max(0.06, 2.5 * Math.max(changeLatencyMs, 2 * lastChunkMs) / 1000)) * pb.rate : 0;
+      applyChange(componentId, value, Math.max(at ?? now, now + ahead));
     },
     repairAll: () => {
       const s = get().session;
@@ -401,6 +415,7 @@ export const useSim = create<SimState>((set, get) => {
       token++;
       gen++;
       engine.stop?.();
+      warmUpEngine();
       set({ status: "stopped", result: null, basis: null, resultRevision: null, startedAt: null, session: null, stress: [] });
       usePlayback.getState().resetFor(null);
     },
@@ -409,6 +424,7 @@ export const useSim = create<SimState>((set, get) => {
       gen++;
       // Terminating the worker also discards the engine state; the next run loads a fresh ngspice.
       engine.stop?.();
+      warmUpEngine();
       set({ status: "idle", result: null, basis: null, resultRevision: null, blocked: [], startedAt: null, session: null, stress: [] });
       usePlayback.getState().resetFor(null);
     },

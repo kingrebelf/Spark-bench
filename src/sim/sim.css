@@ -68,3 +68,15 @@
 .scope-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
 .damage { border: 1px solid var(--error); border-radius: 6px; padding: 4px 8px; margin: 2px 0 6px; }
 .damage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
+/* Live layout stability: nothing above the scope changes size while it runs. */
+.playback { flex-wrap: nowrap; }
+.playback .pb-toggle { min-width: 72px; }
+.playback .pb-time { min-width: 150px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.status-line { height: 18px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 0 4px; }
+.dial-value { font-variant-numeric: tabular-nums; }
+.plot-table { table-layout: fixed; font-variant-numeric: tabular-nums; }
+.plot-table th:first-child, .plot-table td:first-child { width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.plot-table th:not(:first-child), .plot-table td:not(:first-child) { width: 92px; }
+.plot-foot { min-height: 18px; }
+.playback .btn { white-space: nowrap; flex: none; }
+.playback input[type="range"] { min-width: 80px; }

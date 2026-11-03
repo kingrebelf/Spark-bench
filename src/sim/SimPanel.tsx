@@ -15,7 +15,7 @@ import { resultToCsv, safeFileName, saveText, savePng } from "./exporting";
 import { addSaves, planCurrentSaves, PROBE_COLORS } from "./probes";
 import { autoRate, defaultRate, displayLimit, hasLiveParts, RATES } from "./live";
 import { acSources, sourceFrequencies, suggestAc, suggestTran, validateSetup } from "./setup";
-import { HISTORY_SECONDS, usePlayback, useRunProject, useSim, useStaleness } from "./store";
+import { HISTORY_SECONDS, usePlayback, useRunProject, useSim, useStaleness, warmUpEngine } from "./store";
 import { damageText, stressTracks } from "./stress";
 import { allTraces, magDb, phaseDeg, probeTraces, type Trace } from "./traces";
 import "./sim.css";
@@ -26,6 +26,8 @@ const readHeight = () => { try { return Number(localStorage.getItem(HEIGHT_KEY))
 const readSide = () => { try { return localStorage.getItem(SIDE_KEY) === "1"; } catch { return false; } };
 
 export function SimPanel() {
+  // Load ngspice in the background as soon as the panel exists, so the first Run/Live starts at once.
+  useEffect(() => { warmUpEngine(); }, []);
   const project = useProject((s) => s.project);
   const { status, result, blocked } = useSim();
   const runProject = useRunProject();
@@ -120,7 +122,7 @@ function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: (
   const liveParts = useMemo(() => hasLiveParts(project), [project]);
   const operable = useMemo(() => project.schematic.components.some((c) => getPart(c.type)?.interactive), [project]);
   const label = status === "running" ? `Simulating… ${((Date.now() - (startedAt ?? Date.now())) / 1000).toFixed(1)} s`
-    : status === "done" ? (useSim.getState().session?.live ? `Live: computing ahead of the playhead (last chunk ${result?.elapsedMs} ms)` : `Done in ${result?.elapsedMs} ms`)
+    : status === "done" ? (useSim.getState().session?.live ? "Live: computing ahead of the playhead" : `Done in ${result?.elapsedMs} ms`)
     : status === "failed" ? "Failed: no results (see problems)"
     : status === "stopped" ? "Stopped: engine terminated, no results kept" : "Ready";
   return (
@@ -143,7 +145,7 @@ function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: (
         </button>
       )}
       <button className="btn" onClick={reset} title="Clear results and restart the simulation engine">Reset</button>
-      <span className={`status status-${status}`} role="status">{label}</span>
+      <span className={`status status-${status}`} role="status" title={status === "done" && result ? `Last ngspice run: ${result.elapsedMs} ms` : undefined}>{label}</span>
       {a === "op" && (
         <label className="chk" title="Re-run the operating point automatically about 0.4 s after each schematic edit">
           <input type="checkbox" checked={continuous} onChange={(e) => setContinuous(e.target.checked)} /> Re-run on edits
@@ -345,8 +347,9 @@ interface ResultProps {
 }
 
 function ResultArea({ result, status, blocked, traces, missing, showAll, setShowAll, plotRef, height }: ResultProps) {
+  const live = useSim((s) => !!s.session?.live);
   const probesExist = useProject((s) => s.project.simulation.probes.length > 0);
-  if (status === "running") return <div className="sim-msg">Simulating… ngspice computes the whole run before anything is shown. <b>Stop</b> terminates the engine (no partial results).</div>;
+  if (status === "running") return <div className="sim-msg">{live ? "Starting live…" : "Simulating… ngspice computes the run before it is shown."} <b>Stop</b> terminates the engine (no partial results).</div>;
   if (blocked.length) return <div className="sim-msg"><b>Not run: fix the analysis setup first.</b><DiagnosticList diags={blocked} /></div>;
   if (status === "stopped") return <div className="sim-msg">Stopped by you. The engine was terminated; ngspice-WASM can't pause or hand back a partial run, so there are no results. Press Run to start over.</div>;
   if (!result) return <div className="sim-msg dim">Press <b>Run</b> to simulate. Add probes to choose what to plot; without probes every node voltage is shown.</div>;
@@ -434,6 +437,7 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
   const seek = usePlayback((s) => s.seek);
   const rate = usePlayback((s) => s.rate);
   const basis = useSim((s) => s.basis); // replaced only by a fresh Run/Live, not by live re-runs
+  const live = useSim((s) => !!s.session?.live);
   const [div, setDiv] = useState<number | "auto">("auto");
   const x = result.x!.real;
   const t1 = usePlayback((s) => s.t1);
@@ -459,7 +463,9 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
         <span className="dim small">{t != null ? `Scrolling: ${DIVS} divisions = ${formatSI(DIVS * perDiv, "s", 3)} on screen` : "Showing the whole run (playback off)"}</span>
       </div>
       <Plot handle={plotRef} series={series} panes={panes} xUnit="s" xLabel="time" playhead={t} onSeek={(v) => seek(v)} measurements height={height}
-        hideAfter={displayLimit(t, null)} follow={t != null ? DIVS * perDiv : null} xDiv={t != null ? perDiv : undefined} resetKey={basis} />
+        hideAfter={displayLimit(t, null)} follow={t != null ? DIVS * perDiv : null} xDiv={t != null ? perDiv : undefined} resetKey={basis}
+        fixedWindow={live} />
+      <DamagePanel />
     </>
   );
 }
@@ -495,57 +501,81 @@ function TimeDial() {
 }
 
 function PlaybackBar() {
-  const { t, playing, t0, t1, waiting, play, pause, seek, exit } = usePlayback();
+  const { t, playing, t0, t1, play, pause, seek, exit } = usePlayback();
   const session = useSim((s) => s.session);
   const computing = useSim((s) => s.computing);
-  const { extend, repairAll } = useSim.getState();
-  const operable = useProject((s) => s.project.schematic.components.some((c) => getPart(c.type)?.interactive));
-  const stale = useStaleness();
+  const { extend } = useSim.getState();
   const span = t1 - t0;
   const pos = t ?? t1;
+  return (
+    <div className="playback-wrap">
+      <div className="playback" aria-label="Playback of the computed result">
+        {playing ? <button className="btn sm pb-toggle" onClick={pause} title="Pause playback">❚❚ Pause</button>
+          : <button className="btn sm pb-toggle" onClick={play} title="Play the computed waveform and the values on the schematic">▶ Play</button>}
+        <input type="range" min={0} max={1000} value={span > 0 ? Math.round((pos - t0) / span * 1000) : 0} aria-label="Playback position"
+          onChange={(e) => seek(t0 + Number(e.target.value) / 1000 * span)} />
+        <span className="mono small pb-time">{formatSI(pos, "s", 4)} / {formatSI(t1, "s", 4)}</span>
+        {/* Buttons keep their place (disabled rather than removed) so the row never changes size. */}
+        <button className="btn sm" onClick={exit} disabled={t == null} title="Show the end-of-run values">Exit playback</button>
+        {session && !session.live && <button className="btn sm" onClick={extend} disabled={computing || t == null || t < t1} title="Continue the run from where it ended">Simulate further</button>}
+      </div>
+      <TimeDial />
+      <StatusLine />
+    </div>
+  );
+}
+
+/**
+ * One fixed-height status line under the dial (it never reflows the scope): the most relevant message only,
+ * truncated, with the full text and the explanation in its tooltip.
+ */
+function StatusLine() {
+  const waiting = usePlayback((s) => s.waiting);
+  const session = useSim((s) => s.session);
+  const operable = useProject((s) => s.project.schematic.components.some((c) => getPart(c.type)?.interactive));
+  const stale = useStaleness();
+  // A wait shorter than a quarter second is not worth a message (it would flicker).
+  const [showWait, setShowWait] = useState(false);
+  useEffect(() => {
+    if (!waiting) { setShowWait(false); return; }
+    const id = setTimeout(() => setShowWait(true), 250);
+    return () => clearTimeout(id);
+  }, [waiting]);
   const nChanges = session ? Object.values(session.changes).reduce((n, c) => n + c.length, 0) : 0;
-  // Failures that have happened by the playback time.
+  const how = session?.live
+    ? `Live: ngspice computes short chunks ahead of the playhead, each a real run continuing from the circuit's exact state (every node voltage and inductor current), until you pause. The last ${HISTORY_SECONDS} s of playback are kept for the scope.`
+    : "Playback of a finished ngspice run; operating a part continues the run from the circuit's state at that moment.";
+  let text: string, cls = "dim";
+  if (showWait) { text = "Computing… the simulation can't keep up at this speed, so playback waits for it."; cls = "live-note"; }
+  else if (session && operable && stale.any) { text = "The schematic changed: run again to operate parts."; cls = "warn"; }
+  else if (session?.lastChange && nChanges > 0) {
+    text = `Change applied from ${formatSI(session.lastChange.t, "s", 4)}, continuing from the circuit's state there${session.lastChange.latencyMs != null ? ` (${session.lastChange.latencyMs} ms)` : ""}.`;
+    cls = "live-note";
+  } else if (session && operable) text = "Click switches and buttons, drag potentiometers on the schematic while it plays.";
+  else text = session?.live ? "Live: computing ahead of the playhead until you pause." : "Playback of a finished ngspice run.";
+  return <div className={`status-line small ${cls}`} role="status" title={`${text}\n\n${how}`}>{text}</div>;
+}
+
+/** Failed parts at the playback time; below the scope so it never pushes the scope around. */
+function DamagePanel() {
+  const t = usePlayback((s) => s.t), t1 = usePlayback((s) => s.t1);
+  const session = useSim((s) => s.session);
+  const { repairAll } = useSim.getState();
+  const pos = t ?? t1;
   const damage: Diagnostic[] = [];
   for (const [id, list] of Object.entries(session?.damage ?? {})) {
     for (const d of list) if (d.t <= pos) damage.push({ severity: "warning", code: "part-damaged", source: "check", componentIds: [id], message: d.repairedAt != null && d.repairedAt <= pos ? `${d.message} (repaired at ${formatSI(d.repairedAt, "s", 4)})` : d.message, fix: d.fix });
   }
+  if (!damage.length) return null;
   const broken = Object.values(session?.damage ?? {}).some((l) => l.some((d) => d.repairedAt == null && d.t <= pos));
   return (
-    <div className="playback-wrap">
-      <div className="playback" aria-label="Playback of the computed result">
-        {playing ? <button className="btn sm" onClick={pause} title="Pause playback">❚❚ Pause</button>
-          : <button className="btn sm" onClick={play} title="Play the computed waveform and the values on the schematic">▶ Play</button>}
-        <input type="range" min={0} max={1000} value={span > 0 ? Math.round((pos - t0) / span * 1000) : 0} aria-label="Playback position"
-          onChange={(e) => seek(t0 + Number(e.target.value) / 1000 * span)} />
-        <span className="mono small">{formatSI(pos, "s", 4)} / {formatSI(t1, "s", 4)}</span>
-        {t != null && <button className="btn sm" onClick={exit} title="Show the end-of-run values">Exit playback</button>}
-        {session && !session.live && !computing && t != null && t >= t1 && <button className="btn sm" onClick={extend} title="Continue the run from where it ended">Simulate further</button>}
+    <div className="damage" role="alert">
+      <div className="damage-head">
+        <b>💥 Component damage</b>
+        <span className="dim small">Failed parts are modeled as open circuits from the failure time; real failures vary.</span>
+        {broken && <button className="btn sm" onClick={repairAll} title="Replace the failed parts at the current playback time and continue (they fail again if nothing changes)">Repair all parts</button>}
       </div>
-      <TimeDial />
-      <div className="playback-notes small">
-        {session?.live
-          ? <span className="dim" title="Each chunk is a real ngspice run that continues from the circuit's exact state (every node voltage and inductor current) at the end of the previous one.">
-              Live: ngspice computes short chunks ahead of the playhead, each continuing from the circuit's state, until you pause. The last {HISTORY_SECONDS} s of playback are kept for the scope.
-            </span>
-          : <span className="dim" title="ngspice computes a run before it is shown; playback only replays it.">Playback of a finished ngspice run.</span>}
-        {session && operable && !stale.any && nChanges === 0 && <span>Click switches and buttons, drag potentiometers on the schematic while it plays.</span>}
-        {session && operable && stale.any && <span className="warn">The schematic changed: run again to operate parts.</span>}
-        {session?.lastChange && nChanges > 0 && <span className="live-note" role="status">
-          Your change applies from {formatSI(session.lastChange.t, "s", 4)}, continuing from the circuit's state at that moment
-          {session.lastChange.latencyMs != null ? ` (shown ${session.lastChange.latencyMs} ms later)` : " (computing…)"}.
-        </span>}
-        {waiting && <span className="live-note" role="status">Computing… (the simulation can't keep up at this speed; playback waits for it)</span>}
-      </div>
-      {damage.length > 0 && (
-        <div className="damage" role="alert">
-          <div className="damage-head">
-            <b>💥 Component damage</b>
-            <span className="dim small">Failed parts are modeled as open circuits from the failure time; real failures vary.</span>
-            {broken && <button className="btn sm" onClick={repairAll} title="Replace the failed parts at the current playback time and continue (they fail again if nothing changes)">Repair all parts</button>}
-          </div>
-          <DiagnosticList diags={damage} compact />
-        </div>
-      )}
+      <DiagnosticList diags={damage} compact />
     </div>
   );
 }
