@@ -6,6 +6,8 @@ the new version's section (when it's empty, it lists the commits since the last 
 
 ## Unreleased
 
+## v0.1.1 — 2026-11-03 (pre-release)
+
 ### New
 - **Launcher / start screen** on every start, with the version, update status, recent projects, patch notes and
   feedback. Enter or Launch goes straight to work.
