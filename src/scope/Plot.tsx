@@ -47,6 +47,12 @@ interface Props {
    * as data accumulates; while scrolling, the y range only grows (rounded, with headroom) so traces don't bounce.
    */
   fixedWindow?: boolean;
+  /** Labelled marks on the x axis (e.g. value edits applied during a live run: "C1 → 22 µF"). */
+  markers?: { t: number; label: string }[];
+  /** Measure only the last `measureLast` x units before the playhead (recent window) instead of the visible range. */
+  measureLast?: number | null;
+  /** With measureLast: never measure before this x (e.g. the latest change), so old and new behaviour don't mix. */
+  measureFrom?: number;
   onSeek?: (x: number) => void;
   /** Show the min/max/avg/RMS/pk-pk/frequency table (time-domain plots). */
   measurements?: boolean;
@@ -67,7 +73,7 @@ function cssVar(el: Element, name: string, fallback: string) {
   return getComputedStyle(el).getPropertyValue(name).trim() || fallback;
 }
 
-export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, follow, resetKey, xDiv, fixedWindow, onSeek, measurements, height, handle }: Props) {
+export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, follow, resetKey, xDiv, fixedWindow, markers, measureLast, measureFrom, onSeek, measurements, height, handle }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
@@ -247,6 +253,20 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
       const px = Math.round(xToPx(playhead)) + 0.5;
       if (px >= M.left && px <= M.left + plotW) { ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(px, M.top); ctx.lineTo(px, bottom); ctx.stroke(); }
     }
+    // Edit markers: a dashed line and the label at the top (only those already reached by the playhead)
+    for (const m of markers ?? []) {
+      if (m.t > lim) continue;
+      const px = Math.round(xToPx(m.t)) + 0.5;
+      if (px < M.left || px > M.left + plotW) continue;
+      ctx.save();
+      ctx.strokeStyle = "#ffb74d"; ctx.globalAlpha = 0.8; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px, M.top); ctx.lineTo(px, bottom); ctx.stroke(); ctx.setLineDash([]);
+      ctx.globalAlpha = 1; ctx.fillStyle = "#ffb74d"; ctx.textBaseline = "top";
+      const w = ctx.measureText(m.label).width;
+      ctx.textAlign = px + 4 + w > M.left + plotW ? "right" : "left";
+      ctx.fillText(m.label, ctx.textAlign === "right" ? px - 4 : px + 4, M.top + 2);
+      ctx.restore();
+    }
     if (cursorsOn) for (const which of ["a", "b"] as const) {
       const v = cursors[which]; if (v == null) continue;
       const px = Math.round(xToPx(v)) + 0.5;
@@ -261,7 +281,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
       const x = Math.min(box.x0, box.x1), y = Math.min(box.y0, box.y1), w = Math.abs(box.x1 - box.x0), h = Math.abs(box.y1 - box.y0);
       ctx.fillRect(x, y, w, h); ctx.strokeRect(x + 0.5, y + 0.5, w, h);
     }
-  }, [width, height, panes.length, paneH, playhead, xToPx, plotW, cursorsOn, cursors, box]);
+  }, [width, height, panes.length, paneH, playhead, xToPx, plotW, cursorsOn, cursors, box, markers, lim]);
 
   const setup = (c: HTMLCanvasElement | null) => {
     if (!c) return null;
@@ -393,7 +413,8 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
 
   // ---------------------------------------------------------------- readouts
   const cA = cursorsOn ? cursors.a : null, cB = cursorsOn ? cursors.b : null;
-  const window_: Range = cA != null && cB != null ? [Math.min(cA, cB), Math.max(cA, cB)] : xr;
+  const recent = measureLast != null && Number.isFinite(lim) && !(cA != null && cB != null);
+  const window_: Range = cA != null && cB != null ? [Math.min(cA, cB), Math.max(cA, cB)] : recent ? [Math.max(extent[0], lim - measureLast!, measureFrom != null && measureFrom < lim ? measureFrom : -Infinity), lim] : xr;
   const meas = useMemo(() => {
     if (!measurements) return new Map<string, Measurements | null>();
     const b = Math.min(window_[1], lim);
@@ -459,7 +480,7 @@ export function Plot({ series, panes, xUnit, xLabel, xLog, playhead, hideAfter, 
       </table>
       <div className="plot-foot">
         {cA != null && cB != null && <span>Δ{xUnit === "s" ? "t" : "f"} = {fmtX(Math.abs(cB - cA), xUnit)}{xUnit === "s" && cB !== cA ? ` · 1/Δt = ${formatSI(Number((1 / Math.abs(cB - cA)).toPrecision(4)), "Hz", 4)}` : ""}</span>}
-        {measurements && <span className="dim">Measured over {cA != null && cB != null ? "cursors A–B" : "the visible range"} ({fmtX(window_[0], xUnit)} … {fmtX(Math.min(window_[1], lim), xUnit)}){Number.isFinite(lim) ? ", up to what has been played" : ""}; averages are time-weighted.</span>}
+        {measurements && <span className="dim">Measured over {cA != null && cB != null ? "cursors A–B" : recent ? "the most recent part" : "the visible range"} ({fmtX(window_[0], xUnit)} … {fmtX(Math.min(window_[1], lim), xUnit)}){Number.isFinite(lim) ? ", up to what has been played" : ""}; averages are time-weighted.</span>}
       </div>
     </div>
   );

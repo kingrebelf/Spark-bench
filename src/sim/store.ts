@@ -5,7 +5,8 @@ import { getPart } from "../core/library";
 import type { SpiceEngine } from "../core/simulate";
 import { useProject } from "../core/store";
 import type { AnalysisKind, Diagnostic, Project, SimResult } from "../core/types";
-import { dropBefore, lastIndexAtOrBefore, runChunk, safeIndex, splice, stateAt, truncate } from "./chunk";
+import { dropBefore, lastIndexAtOrBefore, runChunk, safeIndex, splice, stateAt, truncate, type ChunkState } from "./chunk";
+import { classifyEdit, describeEdit, invalidValues, mapState } from "./edits";
 import { autoRate, defaultRate, livePlan, recordChange, staticValue, tranPlan, valueAt, type Change, type LivePlan } from "./live";
 import { runSimulation } from "./run";
 import { validateSetup } from "./setup";
@@ -42,7 +43,11 @@ export interface Session {
   /** Parts that failed from over-stress (open circuits from the failure time). */
   damage: Record<string, Damage[]>;
   /** The last change: the circuit time it applies from, and how long until its first chunk was shown. */
-  lastChange?: { t: number; latencyMs?: number };
+  lastChange?: { t: number; latencyMs?: number; label?: string };
+  /** Value edits and circuit edits applied during the run (markers on the scope's time axis). */
+  edits?: { t: number; label: string }[];
+  /** One line about an edit that could not be applied (yet), or why the run restarted. */
+  note?: string;
   /** Values operated while the previous change was still computing; applied as soon as it lands. */
   pending?: Record<string, number>;
 }
@@ -104,6 +109,8 @@ const FIRST_CHUNK_SECONDS = 0.1;
 const stressKey = (id: string, kind: string) => `${id}:${kind}`;
 /** Start computing (set when the store is created; playback calls it to keep ahead of the playhead). */
 let kick: () => void = () => {};
+/** Apply schematic edits made during a live run (set when the store is created). */
+let liveEdit: () => void = () => {};
 
 export const useSim = create<SimState>((set, get) => {
   const basisOf = (project: Project, kind: AnalysisKind): ResultBasis =>
@@ -243,7 +250,7 @@ export const useSim = create<SimState>((set, get) => {
           const cur = get().session!;
           const ms = performance.now() - changeWall;
           changeLatencyMs = 0.7 * changeLatencyMs + 0.3 * ms;
-          set({ session: { ...cur, lastChange: { t: cur.lastChange?.t ?? end, latencyMs: Math.round(ms) } } });
+          set({ session: { ...cur, lastChange: { ...cur.lastChange, t: cur.lastChange?.t ?? end, latencyMs: Math.round(ms) } } });
           changeWall = null;
         }
         firstAfterChange = false;
@@ -290,8 +297,54 @@ export const useSim = create<SimState>((set, get) => {
 
   kick = () => void pump();
 
+  /**
+   * The project changed during a live run. Value edits apply a moment ahead of the playhead, continuing from the
+   * circuit's state there (node voltages and inductor currents carry over). Topology edits continue from the
+   * mapped state when every node still exists (new nodes start at 0 V), otherwise the run restarts from 0 s.
+   * Invalid values are never sent to ngspice: the run keeps going with the last valid circuit.
+   */
+  liveEdit = () => {
+    const s = get().session, r = get().result;
+    if (!s?.live || get().status !== "done" || !r?.ok || !r.x?.real.length) return;
+    const old = projectOf(), cur = useProject.getState().project;
+    const kind = classifyEdit(old, cur);
+    if (kind === "none") return;
+    const bad = invalidValues(cur);
+    if (bad.length) { set({ session: { ...s, note: `Not applied yet: ${bad[0].message}` } }); return; }
+    const pb = usePlayback.getState();
+    const now = pb.t ?? pb.t1;
+    const ahead = pb.playing ? Math.min(0.25, Math.max(0.06, 2.5 * Math.max(changeLatencyMs, 2 * lastChunkMs) / 1000)) * pb.rate : 0;
+    const label = kind === "props" ? describeEdit(old, cur) : "circuit edited";
+    if (kind === "props") {
+      const tk = restartAt(now + ahead);
+      if (tk == null) return;
+      transitionFrom = null;
+      params = paramsAt(cur, s.changes, tk);
+      changeWall = performance.now();
+      firstAfterChange = true;
+      const edits = [...(s.edits ?? []).filter((e) => e.t <= tk), { t: tk, label }];
+      set({ basis: basisOf(cur, "tran"), session: { ...s, damage: pruneDamage(s.damage, tk), edits, lastChange: { t: tk, label }, note: undefined } });
+      void pump();
+      return;
+    }
+    // Topology: continue from the state at a quiet timepoint near the playhead, mapped onto the new circuit.
+    const k = safeIndex(r, lastIndexAtOrBefore(r.x.real, now + ahead));
+    const mapped = mapState(old, cur, stateAt(r, k));
+    const ids = new Set(cur.schematic.components.map((c) => c.id));
+    const keep = <T,>(rec: Record<string, T>) => Object.fromEntries(Object.entries(rec).filter(([id]) => ids.has(id)));
+    if (mapped) {
+      const edits = [...(s.edits ?? []).filter((e) => e.t <= mapped.t), { t: mapped.t, label }];
+      void fresh(cur, "tran", { ...s, changes: keep(s.changes), damage: keep(pruneDamage(s.damage, mapped.t)), edits,
+        lastChange: { t: mapped.t, label }, note: "Circuit edited: continuing from the circuit's state at that moment (new nodes start at 0 V)." },
+      { state: mapped, keepRate: true });
+    } else {
+      void fresh(cur, "tran", { ...s, changes: {}, damage: {}, edits: [], lastChange: undefined,
+        note: "Circuit edited: a node of the running circuit no longer exists, so the run restarted from 0 s." }, undefined);
+    }
+  };
+
   /** A fresh run: replaces whatever is shown, auto-plays transients from t = 0. */
-  async function fresh(project: Project, kind: AnalysisKind, session: Session | null) {
+  async function fresh(project: Project, kind: AnalysisKind, session: Session | null, cont?: { state: ChunkState; keepRate: boolean }) {
     const problems = validateSetup(project, kind);
     if (problems.some((d) => d.severity === "error")) {
       set({ blocked: problems, status: "failed", result: null, basis: null, resultRevision: null, session: null, stress: [] });
@@ -305,10 +358,12 @@ export const useSim = create<SimState>((set, get) => {
     set({ status: "running", blocked: [], startedAt: Date.now(), session, stress: [] });
     let result: SimResult;
     if (session) {
-      params = paramsAt(project, {}, 0);
+      const t0 = cont?.state.t ?? 0;
+      params = paramsAt(project, session.changes, t0);
       // Run: the whole span in one run. Live: a first chunk, then chunks ahead of the playhead.
-      const length = session.live ? Math.max(LEAD_SECONDS * session.plan.rate, 20 * session.plan.step) : session.stop;
-      result = await runChunk(project, engine, { t0: 0, length, step: session.plan.step, params, state: null });
+      const rate = cont?.keepRate ? usePlayback.getState().rate : session.plan.rate;
+      const length = session.live ? Math.max(LEAD_SECONDS * rate, 20 * session.plan.step) : session.stop;
+      result = await runChunk(project, engine, { t0, length, step: session.plan.step, params, state: cont?.state ?? null });
     } else {
       result = await runSimulation(project, engine, kind);
     }
@@ -337,7 +392,7 @@ export const useSim = create<SimState>((set, get) => {
       append(piece, pieceTracks);
       const pb = usePlayback.getState();
       const auto = autoRate(project), span = defaultRate(session.stop);
-      pb.setRate(session.live ? session.plan.rate : auto != null ? Math.min(auto, span) : span);
+      if (!cont?.keepRate) pb.setRate(session.live ? session.plan.rate : auto != null ? Math.min(auto, span) : span);
       pb.play();
       void pump();
     } else {
@@ -494,6 +549,16 @@ function scheduleContinuous() {
 }
 useProject.subscribe((s, prev) => {
   if (s.project !== prev.project && useSim.getState().continuous) scheduleContinuous();
+});
+
+// Edits during a live run (properties panel, undo/redo, canvas): applied live after a short pause in typing.
+const EDIT_DEBOUNCE_MS = 60;
+let editTimer: ReturnType<typeof setTimeout> | null = null;
+useProject.subscribe((s, prev) => {
+  if (s.project === prev.project || !useSim.getState().session?.live) return;
+  if (s.project.schematic === prev.project.schematic && s.project.models === prev.project.models) return;
+  if (editTimer) clearTimeout(editTimer);
+  editTimer = setTimeout(() => { editTimer = null; liveEdit(); }, EDIT_DEBOUNCE_MS);
 });
 
 // ---------------------------------------------------------------- playback

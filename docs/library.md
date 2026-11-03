@@ -150,6 +150,12 @@ per netlist; per-instance values passed as subcircuit parameters).
   voltage-controlled switch, or the pot's two halves). Time-dependent parts honor `ctx.timeOffset` so a chunk continues
   the same waveform: sine phase, pulse delay, and the 555/digital power-up gate (`time+{t0} > 0`). Live mode lives in
   `src/sim/**`. Contact bounce is not modeled.
+- **Editing values during a live run.** Any value or model change in Properties (and undo/redo) applies at once:
+  the run continues from the circuit's state at that moment with the new value. The state that carries over is
+  every node voltage and inductor current, so a capacitor keeps its *voltage* (not its charge) and an inductor
+  keeps its *current* when its value changes. Text that isn't a valid value is never sent to ngspice; the run keeps
+  the last valid value until the field parses. Adding or rewiring parts continues from the state too when every
+  node still exists (new nodes start at 0 V); otherwise the run restarts from 0 s and says so.
 - **Ratings and damage (live simulation only).** Parts with ratings carry them as editable props that never change
   the netlist: resistor power (default 0.25 W), capacitor voltage (50 V), electrolytic voltage (25 V) and reverse
   voltage (1 V), LED max current (30 mA), diode max current (small-signal 300 mA, rectifier and Schottky 1 A) and

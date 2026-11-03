@@ -151,7 +151,7 @@ function SimBar({ sideHidden, toggleSide }: { sideHidden: boolean; toggleSide: (
           <input type="checkbox" checked={continuous} onChange={(e) => setContinuous(e.target.checked)} /> Re-run on edits
         </label>
       )}
-      {result && status !== "running" && stale.any && (
+      {result && status !== "running" && stale.any && !useSim.getState().session?.live && (
         <span className="stale" role="note">
           ⚠ {stale.schematic ? "Schematic changed" : "Analysis settings changed"} since this result. Run again to update.
         </span>
@@ -438,6 +438,10 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
   const rate = usePlayback((s) => s.rate);
   const basis = useSim((s) => s.basis); // replaced only by a fresh Run/Live, not by live re-runs
   const live = useSim((s) => !!s.session?.live);
+  const edits = useSim((s) => s.session?.edits);
+  const lastChangeT = useSim((s) => s.session?.lastChange?.t);
+  // Recent windows (seconds of playback) by default in live mode, so tuning a value gives immediate numbers.
+  const [measure, setMeasure] = useState<number | "visible">(live ? 5 : "visible");
   const [div, setDiv] = useState<number | "auto">("auto");
   const x = result.x!.real;
   const t1 = usePlayback((s) => s.t1);
@@ -460,11 +464,19 @@ function TranView({ result, traces, plotRef, height }: { result: SimResult; trac
             {RATES.map((r) => <option key={r} value={r}>{formatSI(r, "s", 3)}</option>)}
           </select>
         </label>
+        <label className="fld" title="Window for Min/Max/Avg/RMS/Pk-pk/Freq. Recent windows follow the playhead, so tuning a part gives immediate numbers.">
+          <span>Measure</span>
+          <select value={String(measure)} onChange={(e) => setMeasure(e.target.value === "visible" ? "visible" : Number(e.target.value))} aria-label="Measurement window">
+            <option value="visible">visible range</option>
+            <option value="2">last 2 s</option>
+            <option value="5">last 5 s</option>
+          </select>
+        </label>
         <span className="dim small">{t != null ? `Scrolling: ${DIVS} divisions = ${formatSI(DIVS * perDiv, "s", 3)} on screen` : "Showing the whole run (playback off)"}</span>
       </div>
       <Plot handle={plotRef} series={series} panes={panes} xUnit="s" xLabel="time" playhead={t} onSeek={(v) => seek(v)} measurements height={height}
         hideAfter={displayLimit(t, null)} follow={t != null ? DIVS * perDiv : null} xDiv={t != null ? perDiv : undefined} resetKey={basis}
-        fixedWindow={live} />
+        fixedWindow={live} markers={edits} measureLast={t != null && measure !== "visible" ? measure * rate : null} measureFrom={lastChangeT} />
       <DamagePanel />
     </>
   );
@@ -547,11 +559,15 @@ function StatusLine() {
     : "Playback of a finished ngspice run; operating a part continues the run from the circuit's state at that moment.";
   let text: string, cls = "dim";
   if (showWait) { text = "Computing… the simulation can't keep up at this speed, so playback waits for it."; cls = "live-note"; }
-  else if (session && operable && stale.any) { text = "The schematic changed: run again to operate parts."; cls = "warn"; }
-  else if (session?.lastChange && nChanges > 0) {
-    text = `Change applied from ${formatSI(session.lastChange.t, "s", 4)}, continuing from the circuit's state there${session.lastChange.latencyMs != null ? ` (${session.lastChange.latencyMs} ms)` : ""}.`;
+  else if (session?.note && session.note.startsWith("Not applied")) { text = session.note; cls = "warn"; }
+  else if (session && !session.live && operable && stale.any) { text = "The schematic changed: run again to operate parts."; cls = "warn"; }
+  else if (session?.lastChange && (nChanges > 0 || session.lastChange.label)) {
+    const what = session.lastChange.label ? `${session.lastChange.label} applied` : "Change applied";
+    text = `${what} from ${formatSI(session.lastChange.t, "s", 4)}, continuing from the circuit's state there${session.lastChange.latencyMs != null ? ` (${session.lastChange.latencyMs} ms)` : ""}.`;
     cls = "live-note";
-  } else if (session && operable) text = "Click switches and buttons, drag potentiometers on the schematic while it plays.";
+  } else if (session?.note) text = session.note;
+  else if (session?.live) text = operable ? "Click switches and buttons, drag potentiometers, or edit any value in Properties while it plays." : "Edit any value in Properties while it plays: it applies at once.";
+  else if (session && operable) text = "Click switches and buttons, drag potentiometers on the schematic while it plays.";
   else text = session?.live ? "Live: computing ahead of the playhead until you pause." : "Playback of a finished ngspice run.";
   return <div className={`status-line small ${cls}`} role="status" title={`${text}\n\n${how}`}>{text}</div>;
 }

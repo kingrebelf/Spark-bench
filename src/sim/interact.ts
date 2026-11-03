@@ -28,7 +28,8 @@ export function grabBox(def: ComponentDef): { x0: number; y0: number; x1: number
 export function liveEnabled(): boolean {
   const sim = useSim.getState();
   if (!sim.session || !sim.result?.ok || sim.result.analysis !== "tran") return false;
-  return !staleness(useProject.getState().project, sim.basis, sim.result.analysis).any;
+  // Live runs apply schematic edits as they happen, so a momentarily different schematic doesn't block operating parts.
+  return sim.session.live || !staleness(useProject.getState().project, sim.basis, sim.result.analysis).any;
 }
 
 export function liveHit(p: Point): { inst: ComponentInstance; def: ComponentDef; local: Point } | null {
