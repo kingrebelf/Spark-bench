@@ -6,6 +6,18 @@ the new version's section (when it's empty, it lists the commits since the last 
 
 ## Unreleased
 
+### Improved
+- **Smooth, steady live view.** The scope no longer jumps, resizes or flickers while a circuit runs:
+  - Moving a pot or flipping a switch no longer makes playback stutter: changes take effect a moment ahead of the
+    playhead (tens of milliseconds), so playback keeps running at full speed.
+  - The scope shows its full time window (10 divisions) from the first frame and scrolls smoothly with the
+    playhead. It no longer starts at 0–1 s and widens, which made early waveforms look bigger than they are.
+  - The vertical scale stays put (it only expands if a signal needs more room); press Autoscale to fit again.
+  - Status messages use one fixed line, so the scope box never moves or changes size.
+  - The measurements table keeps fixed column widths.
+- **Faster start**: the simulator loads when the panel opens, so the first trace appears about 0.1 s after
+  pressing Live (it was about 1 s).
+
 ## v0.1.1 — 2026-11-03 (pre-release)
 
 ### New
