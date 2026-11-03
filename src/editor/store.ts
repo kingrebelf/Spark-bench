@@ -37,6 +37,9 @@ interface EditorState {
   /** Freshly pasted items following the cursor until the next click (Esc cancels the paste). */
   floating: { ids: string[]; label: string; anchor: Point } | null;
   setFloating: (f: EditorState["floating"]) => void;
+  /** Part whose values are open in the canvas tuning popover; pinned = opened on purpose (double-click / Enter), not by hover. */
+  tune: { id: string; pinned: boolean; focus?: boolean } | null;
+  setTune: (t: EditorState["tune"]) => void;
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
@@ -63,6 +66,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   setHelpOpen: (helpOpen) => set({ helpOpen }),
   floating: null,
   setFloating: (floating) => set({ floating }),
+  tune: null,
+  setTune: (tune) => set({ tune }),
 }));
 
 export type Hover =

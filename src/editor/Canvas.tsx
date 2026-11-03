@@ -14,6 +14,7 @@ import { componentBounds, hitPin, interactiveText, hitTest, hitWire, itemsBounds
 import { SymbolShapes } from "./SymbolView";
 import { PART_MIME, useEditor, usePointer, type Hover, type View } from "./store";
 import { HelpOverlay, StatusBar } from "./StatusBar";
+import { openTuner, TunePopover } from "./TunePopover";
 import "./editor.css";
 import { SimCanvasOverlay } from "../sim/CanvasOverlay";
 import { liveEnabled, liveInput, liveValue } from "../sim/interact";
@@ -296,7 +297,8 @@ export const Canvas = memo(function Canvas() {
       const l = sch().labels.find((x) => x.id === hit.id)!;
       setLabelEdit({ id: l.id, at: l.position, value: l.name });
     } else if (hit?.kind === "component") {
-      // jump to the first editable value in the Properties panel
+      // tune its values right here; parts without numeric values jump to the Properties panel
+      if (openTuner(hit.id)) return;
       setTimeout(() => (document.querySelector(".props input:not([type=checkbox])") as HTMLInputElement | null)?.select(), 0);
     }
   };
@@ -392,6 +394,7 @@ export const Canvas = memo(function Canvas() {
           else if (ed.tool === "select") {
             const l = sch().labels.find((x) => x.id === useProject.getState().selection[0]);
             if (l && useProject.getState().selection.length === 1) { handled(); setLabelEdit({ id: l.id, at: l.position, value: l.name }); }
+            else if (useProject.getState().selection.length === 1 && openTuner(useProject.getState().selection[0])) handled();
           }
           return;
         case "Delete": case "Backspace":
@@ -475,6 +478,8 @@ export const Canvas = memo(function Canvas() {
             wrapRef.current?.focus({ preventScroll: true });
           }} />
       )}
+      <TunePopover view={view} px={PX} width={size.w} height={size.h}
+        onClose={() => { useEditor.getState().setTune(null); wrapRef.current?.focus({ preventScroll: true }); }} />
       <StatusBar onFit={fit} onZoom={zoomBy} />
       <HelpOverlay />
     </div>
@@ -566,8 +571,8 @@ function displayValue(inst: ComponentInstance, def: ComponentDef, key: string): 
   const pd = def.props.find((p) => p.key === key);
   const raw = String(inst.props[key] ?? pd?.default ?? "");
   if (!pd?.unit || raw === "") return raw;
-  if (/[a-zA-ZÎ©Â°%]$/.test(raw) && !/[TGMkKmuÂµnpf]$/.test(raw) && !/meg$/i.test(raw)) return raw;
-  return Number.isNaN(parseSI(raw)) ? raw : `${raw}${/^\d/.test(pd.unit) ? " " : ""}${pd.unit}`;
+  const v = parseSI(raw);
+  return Number.isNaN(v) ? raw : formatSI(v, pd.unit, 3);
 }
 
 const PartView = memo(function PartView({ inst: c, def, selected, open }: { inst: ComponentInstance; def: ComponentDef | undefined; selected: boolean; open: string }) {
@@ -591,7 +596,7 @@ const PartView = memo(function PartView({ inst: c, def, selected, open }: { inst
   const ty = corner ? b.y - 0.8 - (lines.length - 1) * 1.3 : tall ? b.y + b.h / 2 - (lines.length - 1) * 0.65 : b.y - 1 - (lines.length - 1) * 1.3;
   return (
     <g className={`part ${selected ? "selected" : ""}`}>
-      <title>{`${c.ref} Â· ${def.name}`}</title>
+      <title>{`${c.ref} · ${def.name}`}</title>
       <rect x={b.x - 0.3} y={b.y - 0.3} width={b.w + 0.6} height={b.h + 0.6} className="part-hit" />
       <g transform={`translate(${c.position.x},${c.position.y}) rotate(${c.rotation}) scale(${c.mirror ? -1 : 1},1)`} color={selected ? "var(--ed-sel)" : "var(--symbol)"}>
         <SymbolShapes shapes={def.symbol} />
@@ -770,7 +775,7 @@ function LabelEditor({ edit, view, onDone }: { edit: { id?: string; at: Point; v
           if (performance.now() - mountedAt.current < 250) { setTimeout(() => ref.current?.focus(), 0); return; }
           finish(invalid ? null : value);
         }} />
-      <span>{edit.id ? "Enter to rename Â· Esc to cancel" : "Name this net Â· Enter to place Â· Esc to cancel"}{/^(gnd|0)$/i.test(value.trim()) ? " Â· connects to ground" : ""}</span>
+      <span>{edit.id ? "Enter to rename · Esc to cancel" : "Name this net · Enter to place · Esc to cancel"}{/^(gnd|0)$/i.test(value.trim()) ? " · connects to ground" : ""}</span>
     </div>
   );
 }

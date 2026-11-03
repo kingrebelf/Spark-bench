@@ -155,3 +155,27 @@
 .props dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; margin: 8px 0; }
 .props dl.facts dt { color: var(--text-dim); }
 .props dl.facts dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; min-width: 0; }
+
+/* ------------------------------------------------------------------ value tuning (Properties panel + canvas popover) */
+.field.tune > label { font-size: 12px; color: var(--text-dim); }
+.field.tune .tune-row { display: flex; align-items: center; gap: 6px; }
+.field.tune .tune-row input { flex: 1; min-width: 0; font-family: var(--mono); }
+.field.tune .unit { font-size: 12px; color: var(--text-dim); min-width: 1.4em; }
+.field.tune .tune-status { display: flex; flex-wrap: wrap; gap: 4px 10px; min-height: 16px; font-size: 12px; }
+.field.tune .applied { color: var(--ok); animation: sb-applied 1.8s ease-out forwards; }
+@keyframes sb-applied { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .field.tune .applied { animation: none; } }
+.tune-slider { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 6px; }
+.tune-slider input[type="range"] { width: 100%; min-width: 0; padding: 0; border: none; background: none; accent-color: var(--accent); }
+.tune-slider .tune-end { font: 11px var(--mono); color: var(--text-dim); background: none; border: 1px dashed transparent; border-radius: 4px; padding: 1px 3px; cursor: text; white-space: nowrap; }
+.tune-slider .tune-end:hover, .tune-slider .tune-end:focus-visible { border-color: var(--border); color: var(--text); }
+.tune-slider input.tune-end { width: 64px; border: 1px solid var(--accent); background: var(--panel-2); color: var(--text); }
+.tune-slider input.tune-end[aria-invalid="true"] { border-color: var(--error); }
+.tune-slider .tune-reset { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 0 2px; }
+.tune-pop { position: absolute; z-index: 6; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); padding: 6px 10px 4px; }
+.tune-pop header { display: flex; align-items: baseline; gap: 6px; font-size: 13px; }
+.tune-pop header span { color: var(--text-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.tune-pop header .live-dot { flex: none; color: var(--ok); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.tune-pop header button { flex: none; background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; line-height: 1; }
+.tune-pop .field { margin: 6px 0; }

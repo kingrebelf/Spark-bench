@@ -6,6 +6,8 @@ import { useProject } from "../core/store";
 import type { ComponentDef, ComponentInstance, PropDef, Rotation } from "../core/types";
 import { formatSI, parseSI } from "../core/units";
 import * as A from "./actions";
+import { checkNumber, tunableProps } from "./tune";
+import { TuneField } from "./TuneField";
 import { PROV_TEXT } from "./LibraryPanel";
 
 const ANALYSIS_NAMES: Record<string, string> = { op: "DC operating point", tran: "transient", ac: "AC sweep" };
@@ -25,16 +27,7 @@ function useEditSession() {
   };
 }
 
-/** Validate a numeric prop value. Returns the parsed number, an error or a warning. */
-export function checkNumber(raw: string, p: PropDef): { value?: number; error?: string; warning?: string } {
-  if (raw.trim() === "") return p.default === "" ? {} : { error: "Required. Enter a number such as 4.7k, 100n or 1MEG." };
-  const v = parseSI(raw);
-  if (Number.isNaN(v)) return { error: "Not a number. Use e.g. 4.7k, 100n, 2.2u, 1MEG (M = mega, m = milli)." };
-  if (p.min !== undefined && v < p.min) return { value: v, error: `Must be at least ${formatSI(p.min, p.unit ?? "")}.` };
-  if (p.min === 0 && v === 0 && /Ω|F|H/.test(p.unit ?? "")) return { value: v, warning: "Zero may make the circuit unsolvable." };
-  if (/^\s*[-+]?[\d.]+\s*m\s*(Ω|ohm)?\s*$/i.test(raw) && p.unit === "Ω") return { value: v, warning: "“m” means milli (×0.001). For mega use “M” or “MEG”." };
-  return { value: v };
-}
+export { checkNumber } from "./tune";
 
 export const PropertiesPanel = memo(function PropertiesPanel() {
   const project = useProject((s) => s.project);
@@ -92,6 +85,7 @@ function ComponentProps({ comp }: { comp: ComponentInstance }) {
   const dupRef = comps.some((c) => c.id !== comp.id && c.ref === comp.ref);
   const setComp = (fn: (c: ComponentInstance) => void) => (d: Parameters<Parameters<ReturnType<typeof useProject.getState>["update"]>[1]>[0]) => { fn(d.schematic.components.find((c) => c.id === comp.id)!); };
   const valueProps = def.props.filter((p) => !p.model), modelProps = def.props.filter((p) => p.model);
+  const tunable = new Set(tunableProps(def).map((p) => p.key));
   const unsupported = Object.entries(def.analyses ?? {}).filter(([, ok]) => ok === false).map(([a]) => ANALYSIS_NAMES[a] ?? a);
 
   return (
@@ -111,7 +105,7 @@ function ComponentProps({ comp }: { comp: ComponentInstance }) {
           {!comp.ref.trim() && <em>A reference is required.</em>}
         </label>
       )}
-      {valueProps.map((p) => <PropField key={p.key} comp={comp} p={p} />)}
+      {valueProps.map((p) => <PropField key={p.key} comp={comp} p={p} slider={tunable.has(p.key)} />)}
       <div className="row2">
         <label className="field"><span>Rotation</span>
           <select value={comp.rotation} onChange={(e) => A.rotateTo(comp.id, Number(e.target.value) as Rotation)}>
@@ -134,7 +128,12 @@ function ComponentProps({ comp }: { comp: ComponentInstance }) {
   );
 }
 
-function PropField({ comp, p }: { comp: ComponentInstance; p: PropDef }) {
+function PropField({ comp, p, slider = false }: { comp: ComponentInstance; p: PropDef; slider?: boolean }) {
+  if (p.kind === "number") return <TuneField compId={comp.id} p={p} slider={slider} />;
+  return <PlainField comp={comp} p={p} />;
+}
+
+function PlainField({ comp, p }: { comp: ComponentInstance; p: PropDef }) {
   const session = useEditSession();
   const v = comp.props[p.key] ?? p.default;
   const label = `Edit ${comp.ref} ${p.label.toLowerCase()}`;
