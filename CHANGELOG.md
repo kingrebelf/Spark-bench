@@ -6,6 +6,26 @@ the new version's section (when it's empty, it lists the commits since the last 
 
 ## Unreleased
 
+### New
+- **Change any value while the circuit runs.** Resistance, capacitance, inductance, source frequency and amplitude,
+  model parameters: edit them during a live run and the scope responds within about 0.1 s, continuing from the
+  circuit's state at that moment (a capacitor keeps its voltage, an inductor its current). No stop, no restart.
+  A marker on the scope shows each change ("C1 → 4.7 µF"). Edits stay in the project, and undo applies live too.
+- **Tune values quickly** to find the part you need:
+  - **↑ / ↓ or the mouse wheel** on a focused value steps through standard part values (E24 for resistors,
+    E12 for capacitors and inductors). **Shift** gives fine steps (E96), **Ctrl** jumps ×10.
+  - **Tune slider** under each main value sweeps ÷10 to ×10 on standard values; the graph follows while you drag.
+  - **On the canvas**: double-click a part (or press Enter) for a tuning popover; during a live run, hovering a
+    part opens it.
+  - Values apply as you type (after a short pause) or at once on Enter; invalid text is never applied.
+- **Live measurements**: Freq, period, pk-pk and the rest can measure the last 2 s, last 5 s or the visible range,
+  and never mix in data from before your latest change.
+- Adding or rewiring parts during a live run continues from the current state when possible (otherwise it restarts
+  and says why).
+
+### Fixed
+- Garbled characters (Â·, Î©) in some canvas text.
+
 ## v0.1.2 — 2026-11-03 (pre-release)
 
 ### Improved
